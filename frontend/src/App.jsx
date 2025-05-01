@@ -6,27 +6,28 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { CircularProgress, Box } from '@mui/material';
 import theme from './theme';
 import useAuthStore from './contexts/authStore';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'; // Fixed import here
 
-// Import layouts and components
+const queryClient = new QueryClient();
+ 
+// Layouts & pages
 import MainLayout from './components/layout/MainLayout';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import ErrorBoundary from './components/errors/ErrorBoundary';
 import Dashboard from './pages/Dashboard/Dashboard';
 import Profile from './pages/Profile/Profile';
-import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
 import PeerMatchingPage from './pages/PeerMatching/PeerMatchingPage';
-
-// import { SocketProvider } from './contexts/SocketContext';
-// import MessagesPage from './pages/Messages/MessagesPage';
+import MessagesPage from './pages/MessagesPage';
+import ChatRoom from './pages/ChatRoom';
+import ErrorBoundary from './components/errors/ErrorBoundary';
+import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const { checkAuth, isAuthenticated } = useAuthStore();
   
   useEffect(() => {
-    // Check authentication on app load
     const initAuth = async () => {
       try {
         await checkAuth();
@@ -36,25 +37,17 @@ function App() {
         setIsInitializing(false);
       }
     };
-    
     initAuth();
   }, [checkAuth]);
   
-  // Show loading indicator while initializing auth
   if (isInitializing) {
     return (
-      <Box sx={{ 
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh'
-      }}>
+      <Box className="flex items-center justify-center h-screen">
         <CircularProgress />
       </Box>
     );
   }
 
-  // Define routes after auth is initialized
   const router = createBrowserRouter([
     {
       path: '/',
@@ -63,57 +56,52 @@ function App() {
       children: [
         {
           index: true,
-          element: isAuthenticated ? <Navigate to="/dashboard" /> : <HomePage />
+          element: isAuthenticated 
+             ? <Navigate to="/dashboard" replace />
+             : <HomePage />
         },
         {
           path: 'login',
-          element: isAuthenticated ? <Navigate to="/dashboard" /> : <LoginPage />
+          element: isAuthenticated 
+             ? <Navigate to="/dashboard" replace />
+             : <LoginPage />
         },
         {
           path: 'signup',
-          element: isAuthenticated ? <Navigate to="/dashboard" /> : <SignupPage />
+          element: isAuthenticated 
+             ? <Navigate to="/dashboard" replace />
+             : <SignupPage />
         },
       ],
     },
-    
-    // Protected routes wrapped with SocketProvider for real-time messaging
     {
-      element: isAuthenticated ? 
-       
-          <ProtectedRoute />
-       
-        : 
-        <Navigate to="/login" />,
+      // All protected routes go here
+      element: isAuthenticated 
+         ? <ProtectedRoute />
+         : <Navigate to="/login" replace />,
       children: [
-        {
-          path: 'dashboard',
-          element: <Dashboard />
-        },
-        {
-          path: 'profile',
-          element: <Profile />
-        },
-        {
-          path: 'matching',
-          element: <PeerMatchingPage />
-        },
-       
-      ]
+        { path: 'dashboard', element: <Dashboard /> },
+        { path: 'profile',   element: <Profile /> },
+        { path: 'matching',  element: <PeerMatchingPage /> },
+        // **Messaging**
+        { path: 'messages',          element: <MessagesPage /> },
+        { path: 'chat/:channelId',   element: <ChatRoom /> },
+      ],
     },
-    
-    // Catch-all route
     {
       path: '*',
       element: <ErrorBoundary />,
-    }
+    },
   ]);
-  
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <QueryClientProvider client={queryClient}> {/* Fixed component name here */}
       <div className="min-h-screen font-sans">
         <RouterProvider router={router} />
       </div>
+      </QueryClientProvider>
     </ThemeProvider>
   );
 }

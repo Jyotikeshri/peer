@@ -10,6 +10,8 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import cronRoutes from './routes/cronRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
+
 
 import bodyParser from 'body-parser';
 import { protect } from './middleware/authMiddleware.js';
@@ -44,6 +46,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/chat', chatRoutes);
+
 
 
 // Example protected route
