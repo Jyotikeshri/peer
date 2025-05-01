@@ -19,6 +19,11 @@ const userSchema = new mongoose.Schema({
   groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }],
   badges: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Badge' }],
   isOnline: { type: Boolean, default: false },
+  isOnboarded : {
+    type : Boolean,
+    required : true,
+    default : false
+  }
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);

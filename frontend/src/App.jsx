@@ -18,8 +18,8 @@ import Profile from './pages/Profile/Profile';
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
 import PeerMatchingPage from './pages/PeerMatching/PeerMatchingPage';
 
-import { SocketProvider } from './contexts/SocketContext';
-import MessagesPage from './pages/Messages/MessagesPage';
+// import { SocketProvider } from './contexts/SocketContext';
+// import MessagesPage from './pages/Messages/MessagesPage';
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -79,9 +79,9 @@ function App() {
     // Protected routes wrapped with SocketProvider for real-time messaging
     {
       element: isAuthenticated ? 
-        <SocketProvider>
+       
           <ProtectedRoute />
-        </SocketProvider> 
+       
         : 
         <Navigate to="/login" />,
       children: [

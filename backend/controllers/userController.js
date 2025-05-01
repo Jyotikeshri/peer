@@ -8,6 +8,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 import * as tf from '@tensorflow/tfjs';
 import * as use from '@tensorflow-models/universal-sentence-encoder';
+import { upsertStreamUser } from '../config/stream.js';
+
 
 // Cloudinary configuration
 cloudinaryV2.config({
@@ -144,7 +146,7 @@ export const updateUserProfile = async (req, res) => {
       // Continue with the original values if parsing fails
     }
 
-    const { bio, github, linkedin, leetcode, portfolio } = req.body;
+    const { bio, github, linkedin, leetcode, portfolio, isOnboarded } = req.body;
 
     // Check if avatar file is uploaded
     let avatar;
@@ -168,13 +170,31 @@ export const updateUserProfile = async (req, res) => {
     if (leetcode !== undefined) updatedUserData.leetcode = leetcode;
     if (portfolio !== undefined) updatedUserData.portfolio = portfolio;
 
+    if (typeof isOnboarded !== 'undefined') {
+      updatedUserData.isOnboarded = (isOnboarded === 'true' || isOnboarded === true);
+    }
+
     console.log('Updating user with data:', updatedUserData);
+
 
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       updatedUserData,
       { new: true } // Return updated user
-    ).select('-password'); // Exclude password field
+    ).select('-password');
+    
+    
+    try {
+      await upsertStreamUser({
+        id: updatedUser._id.toString(),
+        name: updatedUser.username,
+        image: updatedUser.avatar || "",
+      });
+      console.log(`Stream user updated after onboarding for ${updatedUser.username}`);
+    } catch (streamError) {
+      console.log("Error updating Stream user during onboarding:", streamError.message);
+    }
+    // Exclude password field
 
     if (!updatedUser) {
       console.log('User not found with ID:', req.user._id);
@@ -319,6 +339,47 @@ export const findMatches = async (req, res) => {
 function stringPartialMatch(textA, textB) {
   return textA.includes(textB) || textB.includes(textA);
 }
+
+
+export const onboard =  async (req, res) => {
+  try {
+    const { isOnboarded } = req.body;
+    
+    if (typeof isOnboarded !== 'boolean') {
+      return res.status(400).json({ message: 'isOnboarded must be a boolean value' });
+    }
+    
+    // Get the user's ID from the authenticated session
+    const userId = req.user.id;
+    
+    // Update only the isOnboarded field
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { isOnboarded },
+      { new: true } // Return the updated document
+    );
+
+    try {
+      await upsertStreamUser({
+        id: updatedUser._id.toString(),
+        name: updatedUser.username,
+        image: updatedUser.avatar || "",
+      });
+      console.log(`Stream user updated after onboarding for ${updatedUser.username}`);
+    } catch (streamError) {
+      console.log("Error updating Stream user during onboarding:", streamError.message);
+    }
+    
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Error updating onboarding status:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 
 
 

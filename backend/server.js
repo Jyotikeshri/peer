@@ -10,8 +10,7 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import cronRoutes from './routes/cronRoutes.js';
-import messageRoutes from './routes/messageRoutes.js';
-import conversationRoutes from './routes/conversationRoutes.js';
+
 import bodyParser from 'body-parser';
 import { protect } from './middleware/authMiddleware.js';
 import jwt from 'jsonwebtoken';
@@ -45,8 +44,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/cron', cronRoutes);
-app.use('/api/messages', messageRoutes);
-app.use('/api/conversations', conversationRoutes);
+
 
 // Example protected route
 app.get('/api/protected', protect, (req, res) => {

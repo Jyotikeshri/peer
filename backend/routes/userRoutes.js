@@ -9,7 +9,8 @@ import {
   addFriend,
   findMatches,
   upload,
-  getFriendsList
+  getFriendsList,
+  onboard
 } from '../controllers/userController.js';
 import User from '../models/User.js';
 
@@ -17,6 +18,8 @@ const router = express.Router();
 
 // Your existing routes
 router.get('/profile', protect, getUserProfile);
+router.post('/onboarding', protect, onboard);
+
 router.put('/profile', protect, upload.single('avatar'), updateUserProfile);
 router.get('/', protect, getAllUsers);
 router.get('/get-badge', protect, getUserBadges);

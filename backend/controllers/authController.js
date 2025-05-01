@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { upsertStreamUser } from '../config/stream.js';
 
 export const register = async (req, res) => {
   try {
@@ -20,6 +21,17 @@ export const register = async (req, res) => {
       email,
       password: hashedPassword
     });
+
+    try {
+      await upsertStreamUser({
+        id: newUser._id.toString(),
+        name: newUser.username,
+        image: newUser.avatar || "",
+      });
+      console.log(`Stream user created for ${newUser.username}`);
+    } catch (error) {
+      console.log("Error creating Stream user:", error);
+    }
 
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
@@ -53,6 +65,8 @@ export const login = async (req, res) => {
       // Remove the password field from the user object
       const userWithoutPassword = user.toObject();
       delete userWithoutPassword.password;
+
+      
   
       const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
       console.log(token);
