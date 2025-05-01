@@ -1,5 +1,6 @@
 // src/pages/Profile/Profile.jsx
 import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { 
   Box, 
   Container, 
@@ -34,22 +35,64 @@ import BadgesList from './components/BadgesList';
 import FriendsList from './components/FriendsList';
 import ReviewsList from './components/ReviewsList';
 import GroupsList from './components/GroupsList';
+import FriendRequestButton from './components/FriendRequestButton';
 import useUserStore from '../../contexts/userStore';
 import Header from '../Dashboard/components/Header';
 
 const Profile = () => {
+  const { id } = useParams(); // Get profile ID from URL params
   const { user, isLoading, error, fetchUser, updateProfile } = useUserStore();
   const [isEditing, setIsEditing] = useState(false);
   const [tabValue, setTabValue] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profileUser, setProfileUser] = useState(null);
   const [notification, setNotification] = useState({ open: false, message: '', type: 'success' });
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  // Check if viewing own profile
+  const isOwnProfile = !id || (user && user._id === id);
 
   useEffect(() => {
-    // Fetch user data if not already loaded
-    if (!user) {
-      fetchUser();
-    }
-  }, [user, fetchUser]);
+    const loadProfile = async () => {
+      setProfileLoading(true);
+      
+      // If no ID or ID matches current user, show own profile
+      if (isOwnProfile) {
+        if (!user) {
+          await fetchUser();
+        }
+        setProfileUser(user);
+        setProfileLoading(false);
+        return;
+      }
+      
+      // Otherwise, fetch the other user's profile
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/${id}`,
+          { credentials: 'include' }
+        );
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch user profile');
+        }
+        
+        const userData = await response.json();
+        setProfileUser(userData);
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+        setNotification({
+          open: true,
+          message: 'Failed to load user profile',
+          type: 'error'
+        });
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+    
+    loadProfile();
+  }, [id, user, isOwnProfile, fetchUser]);
 
   // Show error notification if userStore has an error
   useEffect(() => {
@@ -78,6 +121,7 @@ const Profile = () => {
       
       if (updatedUser) {
         setIsEditing(false);
+        setProfileUser(updatedUser);
         setNotification({
           open: true,
           message: 'Profile updated successfully',
@@ -102,10 +146,24 @@ const Profile = () => {
     setNotification({ ...notification, open: false });
   };
 
-  if (isLoading) {
+  if (isLoading || profileLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!profileUser) {
+    return (
+      <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f5f7fa' }}>
+        <Sidebar />
+        <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+          <Header />
+          <Container maxWidth="xl" sx={{ py: 3 }}>
+            <Alert severity="error">User profile not found</Alert>
+          </Container>
+        </Box>
       </Box>
     );
   }
@@ -124,7 +182,7 @@ const Profile = () => {
         <Container maxWidth="xl" sx={{ py: 3 }}>
           {isEditing ? (
             <ProfileEditForm 
-              user={user} 
+              user={profileUser} 
               onSubmit={handleFormUpdate} 
               onCancel={handleEditToggle} 
               isSubmitting={isSubmitting}
@@ -136,56 +194,62 @@ const Profile = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     <Avatar 
-                      src={user?.avatar} 
-                      alt={user?.username} 
+                      src={profileUser?.avatar} 
+                      alt={profileUser?.username} 
                       sx={{ width: 120, height: 120, mr: 3 }}
                     />
                     <Box>
                       <Typography variant="h4" sx={{ mb: 0.5 }}>
-                        {user?.username}
+                        {profileUser?.username}
                       </Typography>
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                        <Rating value={user?.rating || 0} readOnly precision={0.5} />
+                        <Rating value={profileUser?.rating || 0} readOnly precision={0.5} />
                         <Typography variant="body2" sx={{ ml: 1, color: 'text.secondary' }}>
-                          ({user?.reviews?.length || 0} reviews)
+                          ({profileUser?.reviews?.length || 0} reviews)
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 1 }}>
-                        {user?.github && (
-                          <IconButton component={Link} href={user.github} target="_blank" size="small">
+                        {profileUser?.github && (
+                          <IconButton component={Link} href={profileUser.github} target="_blank" size="small">
                             <GitHubIcon />
                           </IconButton>
                         )}
-                        {user?.linkedin && (
-                          <IconButton component={Link} href={user.linkedin} target="_blank" size="small">
+                        {profileUser?.linkedin && (
+                          <IconButton component={Link} href={profileUser.linkedin} target="_blank" size="small">
                             <LinkedInIcon />
                           </IconButton>
                         )}
-                        {user?.leetcode && (
-                          <IconButton component={Link} href={user.leetcode} target="_blank" size="small">
+                        {profileUser?.leetcode && (
+                          <IconButton component={Link} href={profileUser.leetcode} target="_blank" size="small">
                             <CodeIcon />
                           </IconButton>
                         )}
-                        {user?.portfolio && (
-                          <IconButton component={Link} href={user.portfolio} target="_blank" size="small">
+                        {profileUser?.portfolio && (
+                          <IconButton component={Link} href={profileUser.portfolio} target="_blank" size="small">
                             <LanguageIcon />
                           </IconButton>
                         )}
                       </Box>
                     </Box>
                   </Box>
-                  <Button 
-                    variant="outlined" 
-                    startIcon={<EditIcon />} 
-                    onClick={handleEditToggle}
-                  >
-                    Edit Profile
-                  </Button>
+                  <Box>
+                    {isOwnProfile ? (
+                      <Button 
+                        variant="outlined" 
+                        startIcon={<EditIcon />} 
+                        onClick={handleEditToggle}
+                      >
+                        Edit Profile
+                      </Button>
+                    ) : (
+                      <FriendRequestButton profileUserId={profileUser._id} />
+                    )}
+                  </Box>
                 </Box>
                 
-                {user?.bio && (
+                {profileUser?.bio && (
                   <Typography variant="body1" sx={{ mb: 2 }}>
-                    {user.bio}
+                    {profileUser.bio}
                   </Typography>
                 )}
                 
@@ -196,8 +260,8 @@ const Profile = () => {
                       Interests
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {user?.interests && user.interests.length > 0 ? (
-                        user.interests.map((interest, index) => (
+                      {profileUser?.interests && profileUser.interests.length > 0 ? (
+                        profileUser.interests.map((interest, index) => (
                           <Chip key={index} label={interest} size="small" />
                         ))
                       ) : (
@@ -214,8 +278,8 @@ const Profile = () => {
                       Strengths
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {user?.strengths && user.strengths.length > 0 ? (
-                        user.strengths.map((strength, index) => (
+                      {profileUser?.strengths && profileUser.strengths.length > 0 ? (
+                        profileUser.strengths.map((strength, index) => (
                           <Chip 
                             key={index} 
                             label={strength} 
@@ -238,8 +302,8 @@ const Profile = () => {
                       Needs Help With
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {user?.needsHelpWith && user.needsHelpWith.length > 0 ? (
-                        user.needsHelpWith.map((item, index) => (
+                      {profileUser?.needsHelpWith && profileUser.needsHelpWith.length > 0 ? (
+                        profileUser.needsHelpWith.map((item, index) => (
                           <Chip 
                             key={index} 
                             label={item} 
@@ -289,10 +353,10 @@ const Profile = () => {
                 </Tabs>
                 
                 <Box sx={{ p: 3 }}>
-                  {tabValue === 0 && <BadgesList badges={user?.badges || []} />}
-                  {tabValue === 1 && <FriendsList friends={user?.friends || []} />}
-                  {tabValue === 2 && <ReviewsList reviews={user?.reviews || []} />}
-                  {tabValue === 3 && <GroupsList groups={user?.groups || []} />}
+                  {tabValue === 0 && <BadgesList badges={profileUser?.badges || []} />}
+                  {tabValue === 1 && <FriendsList friends={profileUser?.friends || []} />}
+                  {tabValue === 2 && <ReviewsList reviews={profileUser?.reviews || []} />}
+                  {tabValue === 3 && <GroupsList groups={profileUser?.groups || []} />}
                 </Box>
               </Paper>
             </>

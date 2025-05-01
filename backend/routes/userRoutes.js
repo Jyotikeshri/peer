@@ -1,31 +1,40 @@
-// Updated userRoutes.js with direct handler implementation
 import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
-import { 
-  getUserProfile, 
-  updateUserProfile, 
-  getAllUsers, 
+import {
+  getUserProfile,
+  updateUserProfile,
+  getAllUsers,
   getUserBadges,
-  addFriend,
   findMatches,
   upload,
   getFriendsList,
-  onboard
+  onboard,
+  sendFriendRequest,
+  acceptFriendRequest,
+  rejectFriendRequest,
+  getPendingFriendRequests,
+  getUserNotifications,
+  removeFriend,
+  getUserById,
+  addFriend
 } from '../controllers/userController.js';
-import User from '../models/User.js';
 
 const router = express.Router();
 
-// Your existing routes
+// User profile routes
 router.get('/profile', protect, getUserProfile);
+router.put('/profile', protect, upload.single('avatar'), updateUserProfile);
 router.post('/onboarding', protect, onboard);
 
-router.put('/profile', protect, upload.single('avatar'), updateUserProfile);
+// User discovery routes
 router.get('/', protect, getAllUsers);
-router.get('/get-badge', protect, getUserBadges);
 router.get('/matches', protect, findMatches);
 
-// Add friend route
+// User achievements
+router.get('/get-badge', protect, getUserBadges);
+
+// Friend management routes
+router.get('/friends', protect, getFriendsList);
 router.put('/add-friend', protect, async (req, res) => {
   const { userId, friendId } = req.body;
   
@@ -34,6 +43,7 @@ router.put('/add-friend', protect, async (req, res) => {
   }
   
   try {
+    // Assuming addFriend is a function that handles adding friends
     await addFriend(userId, friendId);
     res.status(200).json({ message: 'Friend added successfully' });
   } catch (error) {
@@ -41,42 +51,30 @@ router.put('/add-friend', protect, async (req, res) => {
   }
 });
 
-router.get('/friends', protect , getFriendsList);
-
-// Remove friend route - implement directly here for now
 router.put('/remove-friend', protect, async (req, res) => {
   try {
-    console.log('Remove Friend route handler called');
-    console.log('Request body:', req.body);
-    
     const { userId, friendId } = req.body;
     
     if (!userId || !friendId) {
       return res.status(400).json({ message: 'User ID and Friend ID are required' });
     }
     
-    // Get the user
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-    
-    // Remove the friendId from the friends array
-    user.friends = user.friends.filter(id => id.toString() !== friendId);
-    await user.save();
-    
-    // Also remove the user from the friend's friends list for consistency
-    const friend = await User.findById(friendId);
-    if (friend) {
-      friend.friends = friend.friends.filter(id => id.toString() !== userId);
-      await friend.save();
-    }
-    
+    await removeFriend(userId, friendId);
     res.status(200).json({ message: 'Friend removed successfully' });
   } catch (error) {
     console.error('Error removing friend:', error);
     res.status(500).json({ message: 'Error removing friend', error: error.message });
   }
 });
+
+// Friend request routes
+router.post('/friend-request', protect, sendFriendRequest);
+router.post('/friend-request/accept', protect, acceptFriendRequest);
+router.post('/friend-request/reject', protect, rejectFriendRequest);
+router.get('/friend-requests', protect, getPendingFriendRequests);
+router.get('/:id', protect, getUserById);
+
+// Notification routes
+router.get('/notifications', protect, getUserNotifications);
 
 export default router;

@@ -103,8 +103,11 @@ const PeerCard = ({ peer }) => {
       });
       
       if (response.ok) {
-        // Update local state without reloading the page
+        // Update local state
         setIsConnected(true);
+        
+        // Fetch updated user data to refresh the global state
+        await fetchUser();
         
         setSnackbar({
           open: true,
@@ -149,14 +152,18 @@ const PeerCard = ({ peer }) => {
       });
       
       if (response.ok) {
-        // Just update the UI state, no page reload
+        // Update local state
         setIsConnected(false);
+        
+        // Fetch updated user data to refresh the global state
+        await fetchUser();
+        
         setSnackbar({
           open: true,
           message: `Disconnected from ${peer.name || peer.username}`,
           severity: 'info'
         });
-      } else {
+      }else {
         throw new Error('Failed to disconnect');
       }
     } catch (error) {

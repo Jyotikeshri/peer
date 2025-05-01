@@ -448,5 +448,267 @@ export const getFriendsList = async (req, res) => {
   }
 };
 
+import { StreamChat } from 'stream-chat';
+const streamClient = StreamChat.getInstance(
+  process.env.STREAM_API_KEY,
+  process.env.STREAM_API_SECRET
+);
+
+export const sendFriendRequest = async (req, res) => {
+  try {
+    const { targetUserId } = req.body;
+    const requesterId = req.user._id;
+    
+    if (!targetUserId) {
+      return res.status(400).json({ message: 'targetUserId is required' });
+    }
+    
+    // Prevent sending request to self
+    if (targetUserId.toString() === requesterId.toString()) {
+      return res.status(400).json({ message: "You can't send a friend request to yourself" });
+    }
+    
+    // Find both users
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Target user not found' });
+    }
+    
+    const requester = await User.findById(requesterId);
+    if (!requester) {
+      return res.status(404).json({ message: 'Requester not found' });
+    }
+    
+    // Check if already friends
+    if (targetUser.friends.includes(requesterId)) {
+      return res.status(400).json({ message: 'Already friends with this user' });
+    }
+    
+    // Check if request already sent
+    if (targetUser.friendRequests.includes(requesterId)) {
+      return res.status(400).json({ message: 'Friend request already sent' });
+    }
+    
+    // Add requester to target's friend requests
+    targetUser.friendRequests.push(requesterId);
+    await targetUser.save();
+    
+    // Also update the requester's sent requests if your model supports it
+    if (!requester.sentFriendRequests) {
+      requester.sentFriendRequests = [];
+    }
+    requester.sentFriendRequests.push(targetUserId);
+    await requester.save();
+    
+    // If you're using Stream for notifications, add this code:
+    try {
+      // Replace with your actual Stream integration code
+      const streamClient = StreamChat.getInstance(process.env.STREAM_API_KEY, process.env.STREAM_API_SECRET);
+      
+      const channel = streamClient.channel('messaging', `notifications:${targetUserId}`, {
+        members: [targetUserId.toString()],
+        created_by_id: requesterId.toString(),
+      });
+      
+      await channel.create();
+      
+      // Send friend request event
+      await channel.sendEvent({
+        type: 'friend_request',
+        user: { _id: targetUserId.toString() },
+        sender: {
+          _id: requesterId.toString(),
+          name: requester.username,
+          image: requester.avatar || '',
+        }
+      });
+      
+      console.log(`Friend request notification sent from ${requesterId} to ${targetUserId}`);
+    } catch (streamError) {
+      console.error('Error sending Stream notification:', streamError);
+      // Continue even if notification fails
+    }
+    
+    // Log the successful request
+    console.log(`Friend request sent from ${requesterId} to ${targetUserId}`);
+    
+    res.status(200).json({ 
+      message: 'Friend request sent successfully',
+      sentFriendRequests: requester.sentFriendRequests
+    });
+  } catch (error) {
+    console.error('Error sending friend request:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Accept a friend request
+export const acceptFriendRequest = async (req, res) => {
+  try {
+    const { requesterId } = req.body;
+    const userId = req.user._id;
+    
+    if (!requesterId) {
+      return res.status(400).json({ message: 'Requester ID is required' });
+    }
+    
+    // Find the current user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Check if request exists
+    if (!user.friendRequests.includes(requesterId)) {
+      return res.status(400).json({ message: 'No pending friend request from this user' });
+    }
+    
+    // Find the requester
+    const requester = await User.findById(requesterId);
+    if (!requester) {
+      return res.status(404).json({ message: 'Requester not found' });
+    }
+    
+    // Remove from pending requests
+    user.friendRequests = user.friendRequests.filter(
+      id => id.toString() !== requesterId
+    );
+    
+    // Add to each other's friends list
+    if (!user.friends.includes(requesterId)) {
+      user.friends.push(requesterId);
+    }
+    
+    if (!requester.friends.includes(userId)) {
+      requester.friends.push(userId);
+    }
+    
+    // Remove from sent requests if we're tracking that
+    if (requester.sentFriendRequests) {
+      requester.sentFriendRequests = requester.sentFriendRequests.filter(
+        id => id.toString() !== userId.toString()
+      );
+    }
+    
+    // Save both users
+    await user.save();
+    await requester.save();
+    
+    res.status(200).json({ 
+      message: 'Friend request accepted', 
+      friends: user.friends,
+      friendRequests: user.friendRequests
+    });
+  } catch (error) {
+    console.error('Error accepting friend request:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+// Get pending friend requests for the current user
+export const getPendingFriendRequests = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate('friendRequests', 'username avatar bio');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.status(200).json(user.friendRequests);
+  } catch (error) {
+    console.error('Error fetching friend requests:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get user's notifications
+export const getUserNotifications = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    // Generate a Stream token for frontend
+    const token = generateStreamToken(userId);
+    
+    res.status(200).json({ 
+      token,
+      userId: userId.toString()
+    });
+  } catch (error) {
+    console.error('Error generating Stream token:', error);
+    res.status(500).json({ message: error.message || 'Failed to get notifications' });
+  }
+};
+
+/**
+ * Controller function for rejecting a friend request
+ * This removes the requester's ID from the user's friendRequests array
+ */
+export const rejectFriendRequest = async (req, res) => {
+  try {
+    const { requesterId } = req.body;
+    const userId = req.user._id;
+    
+    if (!requesterId) {
+      return res.status(400).json({ message: 'Requester ID is required' });
+    }
+    
+    // Find the current user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Check if request exists
+    if (!user.friendRequests.includes(requesterId)) {
+      return res.status(400).json({ message: 'No pending friend request from this user' });
+    }
+    
+    // Remove from pending requests
+    user.friendRequests = user.friendRequests.filter(
+      id => id.toString() !== requesterId
+    );
+    
+    // Save user
+    await user.save();
+    
+    // Optionally, update the requester's sent requests list if tracking that
+    const requester = await User.findById(requesterId);
+    if (requester && requester.sentFriendRequests) {
+      requester.sentFriendRequests = requester.sentFriendRequests.filter(
+        id => id.toString() !== userId.toString()
+      );
+      await requester.save();
+    }
+    
+    res.status(200).json({ 
+      message: 'Friend request rejected', 
+      friendRequests: user.friendRequests
+    });
+  } catch (error) {
+    console.error('Error rejecting friend request:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+export const getUserById = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    
+    // Fetch user excluding password
+    const user = await User.findById(userId).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.status(200).json(user);
+  } catch (error) {
+    console.error('Error fetching user by ID:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
 
 export { addFriend, upload };

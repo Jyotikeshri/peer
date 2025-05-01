@@ -6,7 +6,7 @@ import Header from './components/Header';
 import WelcomeSection from './components/WelcomeSection';
 import StatsCards from './components/StatsCards';
 import LearningProgress from './components/LearningProgress';
-import RecommendedPeers from './components/RecommendedPeers';
+import RecommendedPeers from './components/peers/RecommendedPeers';
 import useUserStore from '../../contexts/userStore';
 
 const Dashboard = () => {

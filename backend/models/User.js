@@ -1,3 +1,4 @@
+// Updated User model
 import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
@@ -19,12 +20,13 @@ const userSchema = new mongoose.Schema({
   groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }],
   badges: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Badge' }],
   isOnline: { type: Boolean, default: false },
-  isOnboarded : {
-    type : Boolean,
-    required : true,
-    default : false
-  }
+  isOnboarded: { type: Boolean, required: true, default: false },
+  
+  // Friend request fields
+  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  sentFriendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
+
 export default User;

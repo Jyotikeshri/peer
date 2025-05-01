@@ -1,219 +1,287 @@
-// src/contexts/userStore.js
+// src/contexts/userStore.js (updated)
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-// Define the user store with persistence
 const useUserStore = create(
   persist(
     (set, get) => ({
-      // User state
       user: null,
       isLoading: false,
       error: null,
 
-      // Set user data
+      // Basic user data methods
       setUser: (userData) => set({ user: userData, error: null }),
-
-      // Clear user data (for logout)
       clearUser: () => set({ user: null, error: null }),
-
-      // Update specific user fields
-      updateUser: (updateData) => set((state) => ({
-        user: { ...state.user, ...updateData },
-        error: null
+      updateUser: (updateData) => set((state) => ({ user: { ...state.user, ...updateData }, error: null })),
+      
+      // Profile methods
+      updateAvatar: (avatarUrl) => set((state) => ({ 
+        user: state.user ? { ...state.user, avatar: avatarUrl } : null 
       })),
 
-      // Update avatar specifically (commonly used)
-      updateAvatar: (avatarUrl) => set((state) => ({
-        user: state.user ? { ...state.user, avatar: avatarUrl } : null
-      })),
-
-      // Fetch user data from API
       fetchUser: async () => {
         try {
           set({ isLoading: true, error: null });
-
-          const response = await fetch('http://localhost:8000/api/users/profile', {
-            credentials: 'include', // Important for cookie-based auth
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to fetch user data');
-          }
-
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/profile`,
+            { credentials: 'include' }
+          );
+          if (!response.ok) throw new Error('Failed to fetch user data');
           const userData = await response.json();
           set({ user: userData, isLoading: false });
           return userData;
-        } catch (error) {
-          console.error('Error fetching user data:', error);
-          set({ error: error.message, isLoading: false });
+        } catch (err) {
+          console.error('Error fetching user data:', err);
+          set({ error: err.message, isLoading: false });
           return null;
         }
       },
 
-      // Update user profile
       updateProfile: async (profileData) => {
         try {
           set({ isLoading: true, error: null });
-      
-          // Check if profileData is FormData (for file uploads) or regular object
           const isFormData = profileData instanceof FormData;
-          
-          console.log('Updating profile with', isFormData ? 'FormData (file upload)' : 'JSON data');
-          
-          const response = await fetch('http://localhost:8000/api/users/profile', {
-            method: 'PUT',
-            // Don't set Content-Type header when using FormData
-            headers: isFormData ? undefined : {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include', // Important for cookie-based auth
-            body: isFormData ? profileData : JSON.stringify(profileData)
-          });
-      
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/profile`,
+            {
+              method: 'PUT',
+              headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: isFormData ? profileData : JSON.stringify(profileData),
+            }
+          );
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.message || 'Failed to update profile');
           }
-      
           const updatedUser = await response.json();
           set({ user: updatedUser, isLoading: false });
           return updatedUser;
-        } catch (error) {
-          console.error('Error updating profile:', error);
-          set({ error: error.message, isLoading: false });
+        } catch (err) {
+          console.error('Error updating profile:', err);
+          set({ error: err.message, isLoading: false });
           return null;
         }
       },
 
-      // Add a friend
-      // In your userStore.js
-// In your userStore.js
-addFriend: async (friendId) => {
-  try {
-    set({ isLoading: false, error: null });
-    const { user } = get();
-    
-    if (!user) {
-      throw new Error('Authentication required');
-    }
-
-    const response = await fetch('http://localhost:8000/api/users/add-friend', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
+      // Friend request methods
+      sendFriendRequest: async (targetUserId) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/friend-request`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ targetUserId }),
+            }
+          );
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to send friend request');
+          }
+          
+          // Update the local state to reflect the pending request
+          set((state) => ({
+            user: {
+              ...state.user,
+              sentFriendRequests: [...(state.user.sentFriendRequests || []), targetUserId]
+            },
+            isLoading: false,
+          }));
+          
+          return true;
+        } catch (err) {
+          console.error('Error sending friend request:', err);
+          set({ error: err.message, isLoading: false });
+          return false;
+        }
       },
-      credentials: 'include',
-      body: JSON.stringify({
-        userId: user._id,
-        friendId
-      })
-    });
 
-    if (!response.ok) {
-      throw new Error('Failed to add friend');
-    }
-
-    // Instead of refetching the whole user, just update the friends array
-    // This prevents a full reload
-    set((state) => ({
-      user: {
-        ...state.user,
-        friends: [...state.user.friends, friendId]
+      acceptFriendRequest: async (requesterId) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/friend-request/accept`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ requesterId }),
+            }
+          );
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to accept friend request');
+          }
+          
+          // Update local state: remove from requests, add to friends
+          set((state) => {
+            // Get current lists, ensuring they're arrays
+            const friendRequests = Array.isArray(state.user.friendRequests) 
+              ? state.user.friendRequests 
+              : [];
+            const friends = Array.isArray(state.user.friends) 
+              ? state.user.friends 
+              : [];
+            
+            return {
+              user: {
+                ...state.user,
+                friends: [...friends, requesterId],
+                friendRequests: friendRequests.filter(id => id !== requesterId),
+              },
+              isLoading: false,
+            };
+          });
+          
+          return true;
+        } catch (err) {
+          console.error('Error accepting friend request:', err);
+          set({ error: err.message, isLoading: false });
+          return false;
+        }
       },
-      isLoading: false
-    }));
-    
-    return true;
-  } catch (error) {
-    console.error('Error adding friend:', error);
-    set({ error: error.message, isLoading: false });
-    return false;
-  }
-},
 
-removeFriend: async (friendId) => {
-  try {
-    set({ isLoading: true, error: null });
-    const { user } = get();
-    
-    if (!user) {
-      throw new Error('Authentication required');
-    }
-
-    const response = await fetch('http://localhost:8000/api/users/remove-friend', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
+      rejectFriendRequest: async (requesterId) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/friend-request/reject`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ requesterId }),
+            }
+          );
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to reject friend request');
+          }
+          
+          // Update local state: remove from requests
+          set((state) => ({
+            user: {
+              ...state.user,
+              friendRequests: (state.user.friendRequests || []).filter(id => id !== requesterId),
+            },
+            isLoading: false,
+          }));
+          
+          return true;
+        } catch (err) {
+          console.error('Error rejecting friend request:', err);
+          set({ error: err.message, isLoading: false });
+          return false;
+        }
       },
-      credentials: 'include',
-      body: JSON.stringify({
-        userId: user._id,
-        friendId
-      })
-    });
 
-    if (!response.ok) {
-      throw new Error('Failed to remove friend');
-    }
-
-    // Instead of refetching, just update the friends array directly
-    set((state) => ({
-      user: {
-        ...state.user,
-        friends: state.user.friends.filter(id => 
-          id !== friendId && 
-          (typeof id === 'object' ? id._id !== friendId : true)
-        )
-      },
-      isLoading: false
-    }));
-    
-    return true;
-  } catch (error) {
-    console.error('Error removing friend:', error);
-    set({ error: error.message, isLoading: false });
-    return false;
-  }
-},
-
-      // Get user badges
-      fetchBadges: async () => {
+      addFriend: async (friendId) => {
         try {
           set({ isLoading: true, error: null });
           const { user } = get();
-          
-          if (!user) {
-            throw new Error('Authentication required');
-          }
-
-          const response = await fetch('http://localhost:8000/api/users/get-badge', {
-            credentials: 'include', // Important for cookie-based auth
-          });
-
+          if (!user) throw new Error('Authentication required');
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/add-friend`,
+            {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ userId: user._id, friendId }),
+            }
+          );
           if (!response.ok) {
-            throw new Error('Failed to fetch badges');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to add friend');
           }
-
-          const badgesData = await response.json();
           
-          // Update user with new badges
           set((state) => ({
-            user: { ...state.user, badges: badgesData },
-            isLoading: false
+            user: { 
+              ...state.user, 
+              friends: [...(state.user.friends || []), friendId] 
+            },
+            isLoading: false,
           }));
           
+          return true;
+        } catch (err) {
+          console.error('Error adding friend:', err);
+          set({ error: err.message, isLoading: false });
+          return false;
+        }
+      },
+
+      removeFriend: async (friendId) => {
+        try {
+          set({ isLoading: true, error: null });
+          const { user } = get();
+          if (!user) throw new Error('Authentication required');
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/remove-friend`,
+            {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ userId: user._id, friendId }),
+            }
+          );
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to remove friend');
+          }
+          
+          set((state) => ({
+            user: {
+              ...state.user,
+              friends: (state.user.friends || []).filter(id => {
+                // Handle both string IDs and object IDs with _id property
+                if (typeof id === 'string') {
+                  return id !== friendId;
+                }
+                return id._id !== friendId;
+              }),
+            },
+            isLoading: false,
+          }));
+          
+          return true;
+        } catch (err) {
+          console.error('Error removing friend:', err);
+          set({ error: err.message, isLoading: false });
+          return false;
+        }
+      },
+
+      // Badge methods
+      fetchBadges: async () => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/get-badge`,
+            { credentials: 'include' }
+          );
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to fetch badges');
+          }
+          const badgesData = await response.json();
+          set((state) => ({ 
+            user: { ...state.user, badges: badgesData }, 
+            isLoading: false 
+          }));
           return badgesData;
-        } catch (error) {
-          console.error('Error fetching badges:', error);
-          set({ error: error.message, isLoading: false });
+        } catch (err) {
+          console.error('Error fetching badges:', err);
+          set({ error: err.message, isLoading: false });
           return null;
         }
-      }
+      },
     }),
     {
-      name: 'user-storage', // unique name for localStorage
-      partialize: (state) => ({ user: state.user }), // only persist user data
+      name: 'user-storage',
+      partialize: (state) => ({ user: state.user }),
     }
   )
 );
