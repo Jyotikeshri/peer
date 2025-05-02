@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+// src/App.jsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { CircularProgress, Box } from '@mui/material';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { StreamChat } from 'stream-chat';
+
 import theme from './theme';
 import useAuthStore from './contexts/authStore';
 import useUserStore from './contexts/userStore';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useNotificationStore } from './contexts/notificationStore';
+import streamNotificationService from './services/streamNotificationService';
+import { CallContextProvider, GlobalCallNotification } from './contexts/CallContext';
+import { getStreamToken } from './lib/api';
+
 import MainLayout from './components/layout/MainLayout';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -16,58 +24,74 @@ import Profile from './pages/Profile/Profile';
 import PeerMatchingPage from './pages/PeerMatching/PeerMatchingPage';
 import MessagesPage from './pages/MessagesPage';
 import ChatRoom from './pages/ChatRoom';
+import CallPage from './pages/CallPage';
 import ErrorBoundary from './components/errors/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
-import TopBar from './components/layout/TopBar';
-// import NotificationPage from './components/notifications/NotificationPage';
-import { connectStreamUser, subscribeToStreamEvents, client } from './utils/streamService';
-import { useNotificationStore } from './contexts/notificationStore';
 
+// Create a single QueryClient instance
 const queryClient = new QueryClient();
 
-function App() {
-  const [isInitializing, setIsInitializing] = useState(true);
-  const { checkAuth, isAuthenticated } = useAuthStore();
-  const currentUser = useUserStore((s) => s.user);
-  const addNotification = useNotificationStore((s) => s.addNotification);
-  const [streamReady, setStreamReady] = useState(false);
+// 1️⃣ Top‐level App only sets up QueryClientProvider + Theme
+export default function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <QueryClientProvider client={queryClient}>
+        <AppContent />
+      </QueryClientProvider>
+    </ThemeProvider>
+  );
+}
 
+// 2️⃣ All your hooks (useQuery, useAuthStore, etc.) go in here
+function AppContent() {
+  // Auth
+  const { checkAuth, isAuthenticated } = useAuthStore();
+  const user = useUserStore((s) => s.user);
+  const addNotification = useNotificationStore((s) => s.addNotification);
+
+  // Stream notifications
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await checkAuth();
-      } catch (err) {
-        console.error('Auth initialization failed:', err);
-      } finally {
-        setIsInitializing(false);
-      }
-    };
-    initAuth();
+    if (!user?.token) return;
+    streamNotificationService
+      .init(user._id, user.token)
+      .then(ok => {
+        if (!ok) throw new Error('Stream init failed');
+        streamNotificationService.subscribeToNotifications(event => {
+          addNotification({
+            id:        event.event_id,
+            type:      event.type,
+            message:   event.message,
+            sender:    event.sender,
+            data:      event,
+            createdAt: new Date(event.created_at),
+          });
+        });
+      })
+      .catch(console.error);
+  }, [user, addNotification]);
+
+  // App‐init loading
+  const [isInitializing, setIsInitializing] = useState(true);
+  useEffect(() => {
+    checkAuth()
+      .catch(console.error)
+      .finally(() => setIsInitializing(false));
   }, [checkAuth]);
 
-  const hasConnectedRef = useRef(false);
+  // Stream Chat client
+  const chatClient = useMemo(
+    () => StreamChat.getInstance(import.meta.env.VITE_STREAM_API_KEY),
+    []
+  );
 
-
-  useEffect(() => {
-    if (!currentUser || hasConnectedRef.current) return;
-    hasConnectedRef.current = true;
-    let unsubscribe;
-    let mounted = true;
-
-    connectStreamUser()
-      .then(() => {
-        if (!mounted) return;
-        unsubscribe = subscribeToStreamEvents(addNotification);
-        setStreamReady(true);
-      })
-      .catch((err) => console.error('Stream init error:', err));
-
-    return () => {
-      mounted = false;
-      if (unsubscribe) unsubscribe();
-      if (streamReady) client.disconnectUser();
-    };
-  }, [currentUser]);
+  // *** THIS useQuery is now safe, because it's inside QueryClientProvider ***
+  const { data: tokenData, isLoading: tokenLoading } = useQuery({
+    queryKey: ['streamChatToken'],
+    queryFn:  getStreamToken,
+    enabled:  !!user,
+  });
+  const chatToken = tokenData?.token;
 
   if (isInitializing) {
     return (
@@ -77,41 +101,43 @@ function App() {
     );
   }
 
+  // Router setup
   const router = createBrowserRouter([
     {
       path: '/',
       element: <MainLayout />,
       errorElement: <ErrorBoundary />,
       children: [
-        { index: true, element: isAuthenticated ? <Navigate to="/dashboard" replace /> : <HomePage /> },
-        { path: 'login', element: isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage /> },
-        { path: 'signup', element: isAuthenticated ? <Navigate to="/dashboard" replace /> : <SignupPage /> },
+        {
+          index: true,
+          element: isAuthenticated
+            ? <Navigate to="/dashboard" replace />
+            : <HomePage />
+        },
+        { path: 'login',  element: isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage /> },
+        { path: 'signup', element: isAuthenticated ? <Navigate to="/dashboard" replace /> : <SignupPage /> }
       ],
     },
     {
-      element: isAuthenticated ? <ProtectedRoute /> : <Navigate to="/login" replace />, children: [
-        { path: 'dashboard', element: <Dashboard /> },
-        { path: 'profile', element: <Profile /> },
-        { path: 'matching', element: <PeerMatchingPage /> },
-        { path: 'messages', element: <MessagesPage /> },
-        { path: 'chat/:channelId', element: <ChatRoom /> },
-        // { path: 'notifications', element: <NotificationPage /> },
+      element: isAuthenticated ? <ProtectedRoute /> : <Navigate to="/login" replace />,
+      children: [
+        { path: 'dashboard',           element: <Dashboard /> },
+        { path: 'profile',             element: <Profile /> },
+        { path: 'matching',            element: <PeerMatchingPage /> },
+        { path: 'messages',            element: <MessagesPage /> },
+        { path: 'chat/:channelId',     element: <ChatRoom /> },
+        { path: 'call/:id',            element: <CallPage /> },
       ],
     },
     { path: '*', element: <ErrorBoundary /> },
   ]);
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <QueryClientProvider client={queryClient}>
-        <div className="min-h-screen font-sans">
-          
-          <RouterProvider router={router} />
-        </div>
-      </QueryClientProvider>
-    </ThemeProvider>
+    
+      <div className="min-h-screen font-sans">
+        <RouterProvider router={router} />
+      </div>
+      
+    
   );
 }
-
-export default App;

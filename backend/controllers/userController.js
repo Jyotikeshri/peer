@@ -9,6 +9,7 @@ dotenv.config();
 import * as tf from '@tensorflow/tfjs';
 import * as use from '@tensorflow-models/universal-sentence-encoder';
 import { upsertStreamUser } from '../config/stream.js';
+import { StreamChat } from 'stream-chat'; 
 
 
 // Cloudinary configuration
@@ -448,7 +449,7 @@ export const getFriendsList = async (req, res) => {
   }
 };
 
-import { StreamChat } from 'stream-chat';
+
 const streamClient = StreamChat.getInstance(
   process.env.STREAM_API_KEY,
   process.env.STREAM_API_SECRET

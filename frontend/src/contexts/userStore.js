@@ -1,4 +1,4 @@
-// src/contexts/userStore.js (updated)
+// src/contexts/userStore.js (updated with friends state)
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -8,11 +8,15 @@ const useUserStore = create(
       user: null,
       isLoading: false,
       error: null,
+      friends: [], // Added separate friends array for better management
 
       // Basic user data methods
       setUser: (userData) => set({ user: userData, error: null }),
-      clearUser: () => set({ user: null, error: null }),
+      clearUser: () => set({ user: null, error: null, friends: [] }),
       updateUser: (updateData) => set((state) => ({ user: { ...state.user, ...updateData }, error: null })),
+      
+      // Friends management methods
+      setFriends: (friendsData) => set({ friends: friendsData }),
       
       // Profile methods
       updateAvatar: (avatarUrl) => set((state) => ({ 
@@ -29,6 +33,21 @@ const useUserStore = create(
           if (!response.ok) throw new Error('Failed to fetch user data');
           const userData = await response.json();
           set({ user: userData, isLoading: false });
+          
+          // After fetching user, fetch detailed friends data
+          const friendsResponse = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/friends`,
+            { credentials: 'include' }
+          ).catch(err => {
+            console.error('Error fetching friends:', err);
+            return null;
+          });
+          
+          if (friendsResponse && friendsResponse.ok) {
+            const friendsData = await friendsResponse.json();
+            set({ friends: friendsData });
+          }
+          
           return userData;
         } catch (err) {
           console.error('Error fetching user data:', err);
@@ -116,22 +135,40 @@ const useUserStore = create(
             throw new Error(errorData.message || 'Failed to accept friend request');
           }
           
+          // Get the accepted friend's details
+          const friendResponse = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/${requesterId}`,
+            { credentials: 'include' }
+          );
+          
+          let newFriend = null;
+          if (friendResponse.ok) {
+            newFriend = await friendResponse.json();
+          }
+          
           // Update local state: remove from requests, add to friends
           set((state) => {
             // Get current lists, ensuring they're arrays
             const friendRequests = Array.isArray(state.user.friendRequests) 
               ? state.user.friendRequests 
               : [];
-            const friends = Array.isArray(state.user.friends) 
+            const userFriends = Array.isArray(state.user.friends) 
               ? state.user.friends 
+              : [];
+            const storedFriends = Array.isArray(state.friends)
+              ? state.friends
               : [];
             
             return {
               user: {
                 ...state.user,
-                friends: [...friends, requesterId],
+                friends: [...userFriends, requesterId],
                 friendRequests: friendRequests.filter(id => id !== requesterId),
               },
+              // If we got the friend details, add them to friends array
+              friends: newFriend 
+                ? [...storedFriends, newFriend] 
+                : storedFriends,
               isLoading: false,
             };
           });
@@ -197,11 +234,26 @@ const useUserStore = create(
             throw new Error(errorData.message || 'Failed to add friend');
           }
           
+          // Get the new friend's details
+          const friendResponse = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/${friendId}`,
+            { credentials: 'include' }
+          );
+          
+          let newFriend = null;
+          if (friendResponse.ok) {
+            newFriend = await friendResponse.json();
+          }
+          
           set((state) => ({
             user: { 
               ...state.user, 
               friends: [...(state.user.friends || []), friendId] 
             },
+            // If we got the friend details, add them to friends array
+            friends: newFriend 
+              ? [...state.friends, newFriend] 
+              : state.friends,
             isLoading: false,
           }));
           
@@ -243,6 +295,8 @@ const useUserStore = create(
                 return id._id !== friendId;
               }),
             },
+            // Also remove from friends array
+            friends: state.friends.filter(friend => friend._id !== friendId),
             isLoading: false,
           }));
           
@@ -278,10 +332,35 @@ const useUserStore = create(
           return null;
         }
       },
+      
+      // Fetch just friends data
+      fetchFriends: async () => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/users/friends`,
+            { credentials: 'include' }
+          );
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to fetch friends');
+          }
+          const friendsData = await response.json();
+          set({ friends: friendsData, isLoading: false });
+          return friendsData;
+        } catch (err) {
+          console.error('Error fetching friends:', err);
+          set({ error: err.message, isLoading: false });
+          return null;
+        }
+      },
     }),
     {
       name: 'user-storage',
-      partialize: (state) => ({ user: state.user }),
+      partialize: (state) => ({ 
+        user: state.user,
+        friends: state.friends
+      }),
     }
   )
 );

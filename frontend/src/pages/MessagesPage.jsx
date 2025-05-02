@@ -16,9 +16,12 @@ import ListItemAvatar from '@mui/material/ListItemAvatar';
 import Avatar from '@mui/material/Avatar';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
 import 'stream-chat-react/dist/css/v2/index.css';
 import useUserStore from "../contexts/userStore";
 import CustomChannelList from "../components/chat/CustomChannelList";
+import CreateGroupModal from "../components/chat/CreateGroupModal";
 
 // API calls
 const getStreamToken = async () => {
@@ -40,6 +43,18 @@ const getFriends = async () => {
   
   if (!response.ok) {
     throw new Error(`Failed to get friends: ${response.status}`);
+  }
+  
+  return response.json();
+};
+
+const getGroups = async () => {
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/groups`, {
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to get groups: ${response.status}`);
   }
   
   return response.json();
@@ -69,14 +84,11 @@ export default function MessagesPage() {
   const [chatClient, setChatClient] = useState(null);
   const [search, setSearch] = useState('');
   const [error, setError] = useState(null);
+  const [tabValue, setTabValue] = useState(0); // 0 = Chats, 1 = Friends
+  const [createGroupModalOpen, setCreateGroupModalOpen] = useState(false);
   
-  // Get user from userStore - correctly destructure the properties
+  // Get user from userStore
   const { user, friends: storeFriends } = useUserStore();
-  
-  // Log user data for debugging
-  useEffect(() => {
-    console.log("User data from store:", user);
-  }, [user]);
   
   // Fetch stream token using React Query
   const { data: tokenData, isLoading: tokenLoading, error: tokenError } = useQuery({
@@ -92,6 +104,19 @@ export default function MessagesPage() {
     queryKey: ['friends'],
     queryFn: getFriends,
     enabled: !!user?._id && !storeFriends?.length, // Only fetch if no friends in store
+    retry: 1,
+  });
+  
+  // Fetch user's groups
+  const { 
+    data: groups, 
+    isLoading: groupsLoading, 
+    error: groupsError,
+    refetch: refetchGroups
+  } = useQuery({
+    queryKey: ['groups'],
+    queryFn: getGroups,
+    enabled: !!user?._id,
     retry: 1,
   });
   
@@ -163,62 +188,55 @@ export default function MessagesPage() {
     };
   }, [tokenData, user]);
   
-  // Create channels for friends
+  // Create channels for friends and groups
   useEffect(() => {
-    if (!chatClient || !friends?.length || !user?._id) {
-      console.log("Missing chat client, friends, or user ID, not creating channels");
+    if (!chatClient || !user?._id) {
+      console.log("Missing chat client or user ID, not creating channels");
       return;
     }
     
+    // Update the initializeChannels function in MessagesPage.jsx
     const initializeChannels = async () => {
       try {
-        console.log("Initializing channels for friends...");
+        console.log("Initializing channels...");
         
-        const promises = friends.map(async (friend) => {
-          // Create a deterministic channel ID by sorting user IDs
-          const channelId = [user._id, friend._id].sort().join('__');
+        // Initialize friend channels - REMOVE THIS SECTION
+        // Direct messages will be created when user clicks on a friend
+        
+        // Initialize group channels
+        if (groups?.length) {
+          console.log("Initializing channels for groups...");
           
-          try {
-            // Log friend data to debug name issues
-            console.log("Creating channel for friend:", {
-              friendId: friend._id,
-              friendName: friend.username || friend.fullName || "Unknown",
-              channelId
-            });
-            
-            // Initialize the channel with explicit name and image
-            const channel = chatClient.channel('messaging', channelId, {
-              members: [String(user._id), String(friend._id)],
-              // Set explicit name for the friend
-              name: friend.username || friend.fullName || "Chat",
-              // Add additional data for better identification
-              friendInfo: {
-                id: friend._id,
-                name: friend.username || friend.fullName,
-                image: friend.avatar || friend.profilePic
-              }
-            });
-            
-            // Watch the channel and force update
-            await channel.watch();
-            console.log(`Channel initialized: ${channelId}`);
-          } catch (err) {
-            // Ignore errors for channels that already exist
-            if (err.code !== 4) {
-              console.error(`Error creating channel ${channelId}:`, err);
+          const groupPromises = groups.map(async (group) => {
+            try {
+              console.log("Loading channel for group:", {
+                groupId: group._id,
+                groupName: group.name,
+                channelId: group.channelId
+              });
+              
+              // Initialize the channel without trying to create it
+              // Just query for the channel that should already exist on the server
+              const channel = chatClient.channel('messaging', group.channelId);
+              
+              // Watch the channel to receive updates
+              await channel.watch();
+              console.log(`Group channel loaded: ${group.channelId}`);
+            } catch (err) {
+              console.error(`Error loading group channel ${group.channelId}:`, err);
+              // Don't throw error to allow other channels to load
             }
-          }
-        });
-        
-        await Promise.all(promises);
-        console.log("All channels initialized");
+          });
+          
+          await Promise.all(groupPromises);
+        }
       } catch (err) {
         console.error("Error initializing channels:", err);
       }
     };
     
     initializeChannels();
-  }, [chatClient, friends, user]);
+  }, [chatClient, friends, groups, user]);
   
   // Handle authentication errors
   if (!user?._id) {
@@ -289,9 +307,15 @@ export default function MessagesPage() {
     );
   }
   
-  // Filter friends based on search
+  // Filter items based on search and tab
   const filteredFriends = friends?.filter(friend => 
     (friend?.username || friend?.fullName || '')
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  ) || [];
+  
+  const filteredGroups = groups?.filter(group => 
+    (group?.name || '')
       .toLowerCase()
       .includes(search.toLowerCase())
   ) || [];
@@ -305,14 +329,67 @@ export default function MessagesPage() {
   const sort = { last_message_at: -1 };
   
   // Create a channel with a friend
-  const handleChatWithFriend = (friend) => {
-    const channelId = [user._id, friend._id].sort().join('__');
-    navigate(`/chat/${channelId}`);
+  const handleChatWithFriend = async (friend) => {
+    try {
+      // First try to create/get the channel through the backend
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat/direct`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          targetUserId: friend._id
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to create chat channel');
+      }
+      
+      const data = await response.json();
+      navigate(`/chat/${data.channelId}`);
+    } catch (error) {
+      console.error('Error creating direct message:', error);
+      
+      // Fallback - use client-side sorting (less reliable)
+      const channelId = [user._id, friend._id].sort().join('__');
+      
+      try {
+        // Try to get or create the channel on client side
+        const channel = chatClient.channel('messaging', channelId, {
+          members: [user._id.toString(), friend._id.toString()]
+        });
+        
+        // Watch the channel to make sure it exists
+        await channel.watch();
+        navigate(`/chat/${channelId}`);
+      } catch (channelError) {
+        console.error('Error creating channel:', channelError);
+        toast.error('Failed to start conversation. Please try again.');
+      }
+    }
+  };
+  
+  // Navigate to a group chat
+  const handleChatWithGroup = (group) => {
+    navigate(`/chat/${group.channelId}`);
   };
   
   // Handle search input change
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
+  };
+  
+  // Handle tab change
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
+  };
+  
+  // Handle group creation completion
+  const handleGroupCreated = (newGroup) => {
+    refetchGroups();
+    toast.success(`Group "${newGroup.name}" created successfully!`);
   };
   
   // Render the messages page with sidebar
@@ -336,77 +413,132 @@ export default function MessagesPage() {
           
           <TextField
             fullWidth
-            label="Search friends"
+            label="Search"
             variant="outlined"
             size="small"
             value={search}
             onChange={handleSearchChange}
-            className="mb-4"
+            className="mb-2"
           />
+          
+          <Tabs 
+            value={tabValue} 
+            onChange={handleTabChange}
+            variant="fullWidth"
+            className="mb-2"
+          >
+            <Tab label="Chats" />
+            <Tab label="Friends" />
+            <Tab label="Groups" />
+          </Tabs>
         </Box>
         
-        {/* Friends list */}
-        <Box className="px-4">
-          <Typography variant="subtitle2" className="mb-2">
-            Friends {friendsLoading && <CircularProgress size={16} className="ml-2" />}
-          </Typography>
-          
-          {friendsError && (
-            <Typography variant="body2" color="error" className="my-2">
-              Error loading friends: {friendsError.message}
-            </Typography>
+        {/* Tab Content */}
+        <Box className="flex-1 overflow-y-auto px-2">
+          {/* Chats Tab */}
+          {tabValue === 0 && (
+            <Chat client={chatClient} theme="str-chat__theme-light">
+              <CustomChannelList 
+                client={chatClient} 
+                filters={filters} 
+                sort={sort} 
+              />
+            </Chat>
           )}
           
-          {filteredFriends?.length > 0 ? (
-            <List>
-              {filteredFriends.map((friend) => (
-                <ListItem
-                  key={friend._id}
-                  button
-                  onClick={() => handleChatWithFriend(friend)}
-                  sx={{ borderRadius: 1, mb: 0.5 }}
-                >
-                  <ListItemAvatar>
-                    <Avatar 
-                      src={friend.avatar || friend.profilePic} 
-                      alt={friend.username || friend.fullName || 'User'}
-                    >
-                      {(friend.username || friend.fullName || 'U').charAt(0).toUpperCase()}
-                    </Avatar>
-                  </ListItemAvatar>
-                  <ListItemText 
-                    primary={friend.username || friend.fullName || 'Unknown User'} 
-                  />
-                </ListItem>
-              ))}
-            </List>
-          ) : search ? (
-            <Typography variant="body2" color="textSecondary" className="text-center my-4">
-              No friends match your search
-            </Typography>
-          ) : (
-            <Typography variant="body2" color="textSecondary" className="text-center my-4">
-              {!friendsLoading && 'You haven\'t added any friends yet'}
-            </Typography>
+          {/* Friends Tab */}
+          {tabValue === 1 && (
+            <>
+              {friendsLoading && (
+                <Box className="flex justify-center p-4">
+                  <CircularProgress size={24} />
+                </Box>
+              )}
+              
+              {friendsError && (
+                <Typography variant="body2" color="error" className="p-4 text-center">
+                  Error loading friends: {friendsError.message}
+                </Typography>
+              )}
+              
+              {!friendsLoading && filteredFriends.length === 0 && (
+                <Typography variant="body2" color="textSecondary" className="p-4 text-center">
+                  {search ? 'No friends match your search' : 'You haven\'t added any friends yet'}
+                </Typography>
+              )}
+              
+              <List>
+                {filteredFriends.map((friend) => (
+                  <ListItem
+                    key={friend._id}
+                    button
+                    onClick={() => handleChatWithFriend(friend)}
+                    sx={{ borderRadius: 1, mb: 0.5 }}
+                  >
+                    <ListItemAvatar>
+                      <Avatar 
+                        src={friend.avatar || friend.profilePic} 
+                        alt={friend.username || friend.fullName || 'User'}
+                      >
+                        {(friend.username || friend.fullName || 'U').charAt(0).toUpperCase()}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText 
+                      primary={friend.username || friend.fullName || 'Unknown User'} 
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </>
           )}
-        </Box>
-        
-        {/* Recent conversations */}
-        <Box className="px-4 mt-4">
-          <Typography variant="subtitle2" className="mb-2">
-            Recent Conversations
-          </Typography>
-        </Box>
-        
-        {/* Using Custom Channel List instead of the built-in one */}
-        <Box className="flex-1 overflow-y-auto">
-          <Chat client={chatClient} theme="str-chat__theme-light">
-            <CustomChannelList 
-              client={chatClient} 
-              filters={filters} 
-              sort={sort} 
-            />
-          </Chat>
+          
+          {/* Groups Tab */}
+          {tabValue === 2 && (
+            <>
+              {groupsLoading && (
+                <Box className="flex justify-center p-4">
+                  <CircularProgress size={24} />
+                </Box>
+              )}
+              
+              {groupsError && (
+                <Typography variant="body2" color="error" className="p-4 text-center">
+                  Error loading groups: {groupsError.message}
+                </Typography>
+              )}
+              
+              {!groupsLoading && filteredGroups.length === 0 && (
+                <Typography variant="body2" color="textSecondary" className="p-4 text-center">
+                  {search ? 'No groups match your search' : 'You haven\'t joined any groups yet'}
+                </Typography>
+              )}
+              
+              <List>
+                {filteredGroups.map((group) => (
+                  <ListItem
+                    key={group._id}
+                    button
+                    onClick={() => handleChatWithGroup(group)}
+                    sx={{ borderRadius: 1, mb: 0.5 }}
+                  >
+                    <ListItemAvatar>
+                      <Avatar 
+                        src={group.avatar} 
+                        alt={group.name || 'Group'}
+                        sx={{ bgcolor: 'primary.main' }}
+                      >
+                        {(group.name || 'G').charAt(0).toUpperCase()}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText 
+                      primary={group.name || 'Unnamed Group'}
+                      secondary={`${group.members.length} members`}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </>
+          )}
         </Box>
         
         {/* New group button */}
@@ -414,7 +546,7 @@ export default function MessagesPage() {
           <Button 
             variant="contained" 
             fullWidth 
-            className="mt-2"
+            onClick={() => setCreateGroupModalOpen(true)}
           >
             New Group
           </Button>
@@ -424,6 +556,13 @@ export default function MessagesPage() {
       <Box className="flex-1 bg-gray-50">
         <NoConversations />
       </Box>
+      
+      {/* Create Group Modal */}
+      <CreateGroupModal
+        open={createGroupModalOpen}
+        onClose={() => setCreateGroupModalOpen(false)}
+        onGroupCreated={handleGroupCreated}
+      />
     </Box>
   );
 }

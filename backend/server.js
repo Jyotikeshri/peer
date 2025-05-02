@@ -11,6 +11,7 @@ import userRoutes from './routes/userRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import cronRoutes from './routes/cronRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import groupRoutes from './routes/groupRoutes.js';
 
 
 import bodyParser from 'body-parser';
@@ -47,7 +48,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/chat', chatRoutes);
-
+app.use('/api/groups', groupRoutes);
 
 
 // Example protected route
