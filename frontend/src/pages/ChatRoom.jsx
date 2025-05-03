@@ -38,7 +38,10 @@ import Tooltip from '@mui/material/Tooltip';
 import 'stream-chat-react/dist/css/v2/index.css';
 import useUserStore from "../contexts/userStore";
 import GroupInfoPanel from '../components/chat/GroupInfoPanel';
-import CallNotification from '../components/calls/CallNotification';
+import CallNotification from "../components/calls/CallNotification";
+import { MessageSimple } from 'stream-chat-react';
+import Chip from '@mui/material/Chip';
+
 
 // API function to get stream token
 const getStreamToken = async () => {
@@ -52,6 +55,38 @@ const getStreamToken = async () => {
   
   return response.json();
 };
+
+const CustomMessage = (props) => {
+  const { message, formatDate, theme } = props;
+
+  // Render a centered “system” bubble for our call events
+  if (message.type === 'call.accepted' || message.type === 'call.rejected') {
+    const label =
+      message.type === 'call.accepted'
+        ? `✅ Call accepted at ${formatDate(message.created_at, 'time')}`
+        : `❌ Call rejected at ${formatDate(message.created_at, 'time')}`;
+
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        my={1}
+      >
+        <Chip
+          label={label}
+          variant="outlined"
+          sx={{ fontWeight: 'bold' }}
+        />
+      </Box>
+    );
+  }
+
+  // Fallback to the default Stream renderer
+  return <MessageSimple {...props} />;
+};
+
+
+
 
 // Get group details from API
 const getGroupDetails = async (groupId) => {
@@ -239,7 +274,6 @@ const CustomChannelHeader = ({ channel, client, isGroup, groupData, onLeaveGroup
   );
 };
 
-// Main ChatRoom component
 export default function ChatRoom() {
   const { channelId } = useParams();
   const navigate = useNavigate();
@@ -249,11 +283,11 @@ export default function ChatRoom() {
   const [isGroup, setIsGroup] = useState(false);
   const [groupId, setGroupId] = useState(null);
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
-  
-  // Call notification states
+
   const [incomingCall, setIncomingCall] = useState(false);
   const [currentCaller, setCurrentCaller] = useState(null);
   const [incomingCallId, setIncomingCallId] = useState(null);
+  const [callResponse, setCallResponse] = useState(null);
   
   // Get user from store
   const { user } = useUserStore();
@@ -266,52 +300,7 @@ export default function ChatRoom() {
     retry: 2,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
-  
-  // Check if the channel is a group chat
-  useEffect(() => {
-    if (!channelId) return;
-    
-    // If channel ID starts with "group-", it's a group chat
-    if (channelId.startsWith('group-')) {
-      setIsGroup(true);
-      
-      // Extract group ID from the database - we'll need to fetch it
-      fetch(`${import.meta.env.VITE_API_BASE_URL}/groups`, {
-        credentials: 'include'
-      })
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch groups');
-        return res.json();
-      })
-      .then(groups => {
-        // Find the group with matching channelId
-        const group = groups.find(g => g.channelId === channelId);
-        if (group) {
-          setGroupId(group._id);
-        }
-      })
-      .catch(err => {
-        console.error('Error determining group:', err);
-      });
-    } else {
-      setIsGroup(false);
-      setGroupId(null);
-    }
-  }, [channelId]);
-  
-  // Fetch group details if it's a group chat
-  const { 
-    data: groupData, 
-    isLoading: groupLoading,
-    refetch: refetchGroupData
-  } = useQuery({
-    queryKey: ['group', groupId],
-    queryFn: () => getGroupDetails(groupId),
-    enabled: !!groupId && !!user?._id, // Only run for group chats
-    retry: 1,
-  });
-  
-  // Set up message listener for call-related messages
+
   useEffect(() => {
     if (!channel || !chatClient || !user) return;
     
@@ -378,6 +367,50 @@ export default function ChatRoom() {
       chatClient.off('message.new', handleNewMessage);
     };
   }, [channel, chatClient, user]);
+  
+  // Check if the channel is a group chat
+  useEffect(() => {
+    if (!channelId) return;
+    
+    // If channel ID starts with "group-", it's a group chat
+    if (channelId.startsWith('group-')) {
+      setIsGroup(true);
+      
+      // Extract group ID from the database - we'll need to fetch it
+      fetch(`${import.meta.env.VITE_API_BASE_URL}/groups`, {
+        credentials: 'include'
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch groups');
+        return res.json();
+      })
+      .then(groups => {
+        // Find the group with matching channelId
+        const group = groups.find(g => g.channelId === channelId);
+        if (group) {
+          setGroupId(group._id);
+        }
+      })
+      .catch(err => {
+        console.error('Error determining group:', err);
+      });
+    } else {
+      setIsGroup(false);
+      setGroupId(null);
+    }
+  }, [channelId]);
+  
+  // Fetch group details if it's a group chat
+  const { 
+    data: groupData, 
+    isLoading: groupLoading,
+    refetch: refetchGroupData
+  } = useQuery({
+    queryKey: ['group', groupId],
+    queryFn: () => getGroupDetails(groupId),
+    enabled: !!groupId && !!user?._id, // Only run for group chats
+    retry: 1,
+  });
   
   // Initialize chat when we have the token and user
   useEffect(() => {
@@ -533,41 +566,32 @@ export default function ChatRoom() {
       }, 500);
     }
   };
+
+  const handleAcceptCall = async () => {
+    if (!channel || !incomingCallId) return;
   
-  // Handle accepting a call
-  const handleAcceptCall = () => {
-    if (channel && incomingCallId) {
-      // Send acceptance notification
-      const acceptData = {
-        userId: user._id,
-        callId: incomingCallId,
-        timestamp: new Date().toISOString()
-      };
-      
-      channel.sendMessage({
-        text: `CALL_ACCEPTED:${JSON.stringify(acceptData)}`,
-      }).catch(err => {
-        console.error('Error sending call acceptance:', err);
-      });
-    }
+    // Notify the other side (optional)
+    await channel.sendMessage({
+      text: `Call accepted`,
+      type: 'call.accepted',
+      // you can also include metadata if you need timestamps etc.
+      // customType: 'call.accepted',
+      // metadata: { callId: incomingCallId },
+    });
+  
+    // clear the incoming-call UI
+    setIncomingCall(false);
   };
   
-  // Handle rejecting a call
-  const handleRejectCall = () => {
-    if (channel && incomingCallId) {
-      // Send rejection notification
-      const rejectData = {
-        userId: user._id,
-        callId: incomingCallId,
-        timestamp: new Date().toISOString()
-      };
-      
-      channel.sendMessage({
-        text: `CALL_REJECTED:${JSON.stringify(rejectData)}`,
-      }).catch(err => {
-        console.error('Error sending call rejection:', err);
-      });
-    }
+  const handleRejectCall = async () => {
+    if (!channel || !incomingCallId) return;
+  
+    await channel.sendMessage({
+      text: `Call rejected`,
+      type: 'call.rejected',
+    });
+  
+    setIncomingCall(false);
   };
   
   // Handle authentication errors
@@ -671,9 +695,8 @@ export default function ChatRoom() {
           isAdmin={user._id === groupData.admin._id}
         />
       )}
-      
-      {/* Call Notification */}
-      <CallNotification
+
+<CallNotification
         open={incomingCall}
         onClose={() => setIncomingCall(false)}
         caller={currentCaller}
@@ -681,6 +704,26 @@ export default function ChatRoom() {
         onAccept={handleAcceptCall}
         onReject={handleRejectCall}
       />
+      <Dialog
+  open={callResponse === 'accepted' || callResponse === 'rejected'}
+  onClose={() => setCallResponse(null)}
+>
+  <DialogTitle>
+    {callResponse === 'accepted' ? 'Call Accepted' : 'Call Rejected'}
+  </DialogTitle>
+  <DialogContent>
+    <Typography>
+      {callResponse === 'accepted'
+        ? 'You have joined the call.'
+        : 'You have declined the call.'}
+    </Typography>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setCallResponse(null)} autoFocus>
+      OK
+    </Button>
+  </DialogActions>
+</Dialog>
     </Box>
   );
 }

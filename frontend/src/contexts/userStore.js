@@ -11,17 +11,41 @@ const useUserStore = create(
       friends: [], // Added separate friends array for better management
 
       // Basic user data methods
-      setUser: (userData) => set({ user: userData, error: null }),
-      clearUser: () => set({ user: null, error: null, friends: [] }),
-      updateUser: (updateData) => set((state) => ({ user: { ...state.user, ...updateData }, error: null })),
+      setUser: (userData) => {
+        // Save to localStorage when setting user
+        if (userData) {
+          localStorage.setItem("user", JSON.stringify(userData));
+        }
+        set({ user: userData, error: null });
+      },
+      
+      clearUser: () => {
+        // Clear from localStorage when clearing user
+        localStorage.removeItem("user");
+        set({ user: null, error: null, friends: [] });
+      },
+      
+      updateUser: (updateData) => {
+        set((state) => {
+          const updatedUser = { ...state.user, ...updateData };
+          // Update localStorage with the new user data
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+          return { user: updatedUser, error: null };
+        });
+      },
       
       // Friends management methods
       setFriends: (friendsData) => set({ friends: friendsData }),
       
       // Profile methods
-      updateAvatar: (avatarUrl) => set((state) => ({ 
-        user: state.user ? { ...state.user, avatar: avatarUrl } : null 
-      })),
+      updateAvatar: (avatarUrl) => set((state) => { 
+        if (!state.user) return { user: null };
+        
+        const updatedUser = { ...state.user, avatar: avatarUrl };
+        // Update localStorage with the new avatar
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+        return { user: updatedUser };
+      }),
 
       fetchUser: async () => {
         try {
@@ -32,6 +56,9 @@ const useUserStore = create(
           );
           if (!response.ok) throw new Error('Failed to fetch user data');
           const userData = await response.json();
+          
+          // Save to localStorage and update state
+          localStorage.setItem("user", JSON.stringify(userData));
           set({ user: userData, isLoading: false });
           
           // After fetching user, fetch detailed friends data

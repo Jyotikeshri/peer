@@ -21,7 +21,14 @@ const PeerGrid = ({ matches }) => {
       score: match.score || 0.8, // Between 0 and 1
       strengths: match.user?.strengths || ['JavaScript', 'React', 'Node.js'],
       needsHelpWith: match.user?.needsHelpWith || ['GraphQL', 'Machine Learning'],
-      connected: match.connected || false
+      connected: match.connected || false,
+      leetcode: match.user?.leetcode,
+      github: match.user?.github,
+      portfolio: match.user?.portfolio,
+      linkedin: match.user?.linkedin,
+      createdAt : match.user?.createdAt,
+      rating : match.user?.rating,
+
     };
   });
 

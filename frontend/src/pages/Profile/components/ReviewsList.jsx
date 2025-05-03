@@ -1,4 +1,3 @@
-// src/pages/Profile/components/ReviewsList.jsx
 import { useState, useEffect } from 'react';
 import { 
   Box, 
@@ -13,82 +12,70 @@ import {
   Card,
   CardContent,
   Button,
-  Pagination
+  Pagination,
+  Alert
 } from '@mui/material';
 import ReviewsIcon from '@mui/icons-material/Reviews';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
+import useReviewStore from '../../../contexts/reviewStore';
 
-const ReviewsList = ({ reviews = [] }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [reviewsData, setReviewsData] = useState([]);
+// Helper function to filter out ID fields from ratings objects
+const filterRatings = (ratings) => {
+  if (!ratings) return {};
+  
+  const filteredRatings = {...ratings};
+  
+  // Remove any ID fields from the ratings object
+  if (filteredRatings._id) delete filteredRatings._id;
+  if (filteredRatings.id) delete filteredRatings.id;
+  
+  return filteredRatings;
+};
+
+const ReviewsList = ({ userId, limit = 3 }) => {
+  const { fetchMyReviews, fetchUserReviews, isLoading, error } = useReviewStore();
+  const [reviews, setReviews] = useState([]);
   const [page, setPage] = useState(1);
-  const reviewsPerPage = 3;
+  const reviewsPerPage = limit;
 
   useEffect(() => {
-    const fetchReviews = async () => {
+    const loadReviews = async () => {
       try {
-        if (reviews && reviews.length > 0) {
-          // In a real implementation, you would fetch review details if they're not already included
-          // For now, we'll just use mock data
-          const mockReviewsData = [
-            { 
-              id: '1', 
-              rating: 5, 
-              text: 'Absolutely fantastic to work with! Really helped me understand React hooks and context API. Highly recommend!',
-              date: '2025-04-10',
-              reviewer: {
-                id: 'r1',
-                username: 'sarahj',
-                avatar: 'https://randomuser.me/api/portraits/women/65.jpg'
-              }
-            },
-            { 
-              id: '2', 
-              rating: 4, 
-              text: 'Very knowledgeable about database design and helped me optimize my MongoDB queries. Would definitely study together again.',
-              date: '2025-03-22',
-              reviewer: {
-                id: 'r2',
-                username: 'davidc',
-                avatar: 'https://randomuser.me/api/portraits/men/42.jpg'
-              }
-            },
-            { 
-              id: '3', 
-              rating: 5, 
-              text: 'One of the best peers I\'ve worked with! Extremely patient and explains complex concepts in a way that\'s easy to understand.',
-              date: '2025-03-15',
-              reviewer: {
-                id: 'r3',
-                username: 'alexw',
-                avatar: 'https://randomuser.me/api/portraits/women/22.jpg'
-              }
-            },
-            { 
-              id: '4', 
-              rating: 5, 
-              text: 'Helped me prepare for my technical interview. The mock interview sessions were invaluable. Got the job!',
-              date: '2025-02-28',
-              reviewer: {
-                id: 'r4',
-                username: 'robertm',
-                avatar: 'https://randomuser.me/api/portraits/men/13.jpg'
-              }
+        let reviewsData;
+        
+        // If userId is provided, fetch reviews for that user
+        // Otherwise, fetch the current user's reviews
+        if (userId) {
+          reviewsData = await fetchUserReviews(userId);
+        } else {
+          reviewsData = await fetchMyReviews();
+        }
+        
+        if (reviewsData && reviewsData.length > 0) {
+          // Process reviews to remove _id fields
+          const processedReviews = reviewsData.map(review => {
+            // Remove _id field if it exists
+            const { _id, id, ...reviewWithoutId } = review;
+            
+            // Also filter ratings to remove _id
+            if (reviewWithoutId.ratings) {
+              reviewWithoutId.ratings = filterRatings(reviewWithoutId.ratings);
             }
-          ];
+            
+            return reviewWithoutId;
+          });
           
-          // In a real implementation, you would use the actual data from the API
-          setReviewsData(mockReviewsData);
+          setReviews(processedReviews);
+        } else {
+          setReviews([]);
         }
       } catch (error) {
-        console.error('Error fetching reviews:', error);
-      } finally {
-        setIsLoading(false);
+        console.error('Error loading reviews:', error);
       }
     };
     
-    fetchReviews();
-  }, [reviews]);
+    loadReviews();
+  }, [userId, fetchMyReviews, fetchUserReviews]);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -99,6 +86,14 @@ const ReviewsList = ({ reviews = [] }) => {
       <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
         <CircularProgress />
       </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert severity="error" sx={{ mb: 2 }}>
+        {error}
+      </Alert>
     );
   }
 
@@ -117,8 +112,8 @@ const ReviewsList = ({ reviews = [] }) => {
   }
 
   // Calculate pagination
-  const totalPages = Math.ceil(reviewsData.length / reviewsPerPage);
-  const currentReviews = reviewsData.slice(
+  const totalPages = Math.ceil(reviews.length / reviewsPerPage);
+  const currentReviews = reviews.slice(
     (page - 1) * reviewsPerPage,
     page * reviewsPerPage
   );
@@ -127,40 +122,73 @@ const ReviewsList = ({ reviews = [] }) => {
     <Box>
       <List sx={{ width: '100%' }}>
         {currentReviews.map((review, index) => (
-          <React.Fragment key={review.id}>
-            <ListItem sx={{ px: 0, py: 2, display: 'block' }}>
-              <Card elevation={0} sx={{ bgcolor: 'background.default', border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                    <Avatar 
-                      src={review.reviewer.avatar} 
-                      alt={review.reviewer.username}
-                      sx={{ mr: 2 }}
-                    />
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle1">
-                        {review.reviewer.username}
+          <ListItem key={`review-${index}`} sx={{ px: 0, py: 2, display: 'block' }}>
+            <Card elevation={0} sx={{ bgcolor: 'background.default', border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+                  <Avatar 
+                    src={review.reviewer?.avatar} 
+                    alt={review.reviewer?.username}
+                    sx={{ mr: 2 }}
+                  />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="subtitle1">
+                      {review.reviewer?.username || 'Anonymous'}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Rating 
+                        value={
+                          // Use the skill rating as main display
+                          review.ratings?.skill || 
+                          // Or calculate an average if skill is not available
+                          (review.ratings ? 
+                            Object.values(review.ratings).reduce((a, b) => 
+                              typeof a === 'number' && typeof b === 'number' ? a + b : 0, 0) / 
+                            Object.values(review.ratings).filter(val => typeof val === 'number').length : 
+                            0)
+                        } 
+                        readOnly 
+                        size="small" 
+                        sx={{ mr: 1 }} 
+                      />
+                      <Typography variant="body2" color="text.secondary">
+                        {new Date(review.createdAt || review.date || Date.now()).toLocaleDateString()}
                       </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Rating value={review.rating} readOnly size="small" sx={{ mr: 1 }} />
-                        <Typography variant="body2" color="text.secondary">
-                          {new Date(review.date).toLocaleDateString()}
-                        </Typography>
-                      </Box>
                     </Box>
                   </Box>
-                  
-                  <Box sx={{ display: 'flex' }}>
-                    <FormatQuoteIcon sx={{ transform: 'rotate(180deg)', opacity: 0.3, mr: 1 }} />
-                    <Typography variant="body1">
-                      {review.text}
-                    </Typography>
+                </Box>
+                
+                <Box sx={{ display: 'flex' }}>
+                  <FormatQuoteIcon sx={{ transform: 'rotate(180deg)', opacity: 0.3, mr: 1, alignSelf: 'flex-start' }} />
+                  <Typography variant="body1">
+                    {review.text || "No written review provided."}
+                  </Typography>
+                </Box>
+                
+                {review.ratings && (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2 }}>
+                    {Object.entries(review.ratings).map(([category, rating]) => (
+                      // Only render if it's not an ID field and it's a number
+                      category !== '_id' && category !== 'id' && typeof rating === 'number' && (
+                        <Typography 
+                          key={`${category}-${index}`} 
+                          variant="body2" 
+                          color="text.secondary"
+                          sx={{ 
+                            mr: 2,
+                            textTransform: 'capitalize' 
+                          }}
+                        >
+                          {`${category}: ${rating}/5`}
+                        </Typography>
+                      )
+                    ))}
                   </Box>
-                </CardContent>
-              </Card>
-            </ListItem>
+                )}
+              </CardContent>
+            </Card>
             {index < currentReviews.length - 1 && <Divider />}
-          </React.Fragment>
+          </ListItem>
         ))}
       </List>
       

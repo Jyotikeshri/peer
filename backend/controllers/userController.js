@@ -10,6 +10,7 @@ import * as tf from '@tensorflow/tfjs';
 import * as use from '@tensorflow-models/universal-sentence-encoder';
 import { upsertStreamUser } from '../config/stream.js';
 import { StreamChat } from 'stream-chat'; 
+import FriendRequest from '../models/FriendRequest.js';
 
 
 // Cloudinary configuration
@@ -317,6 +318,18 @@ export const findMatches = async (req, res) => {
             strengths: potentialMatch.strengths,
             needsHelpWith: potentialMatch.needsHelpWith,
             friends: potentialMatch.friends,
+            leetcode : potentialMatch.leetcode,
+            github : potentialMatch.github,
+            linkedin : potentialMatch.linkedin,
+            portfolio : potentialMatch.portfolio,
+            badges : potentialMatch.badges,
+            createdAt : potentialMatch.createdAt,
+            rating : potentialMatch.rating,
+
+
+
+
+
           },
           score: parseFloat(score.toFixed(2))
         });
@@ -433,6 +446,13 @@ export const removeFriend = async (userId, friendId) => {
     friend.friends = friend.friends.filter(id => id.toString() !== userId);
     await friend.save();
   }
+
+  const existingRequest = await FriendRequest.findOneAndDelete({
+    $or: [
+      { sender: user._id, recipient: friendId },
+      { sender: friendId, recipient: user._id },
+    ],
+  });
 };
 
 export const getFriendsList = async (req, res) => {
@@ -457,89 +477,94 @@ const streamClient = StreamChat.getInstance(
 
 export const sendFriendRequest = async (req, res) => {
   try {
+    const myId = req.user._id;
     const { targetUserId } = req.body;
-    const requesterId = req.user._id;
     
-    if (!targetUserId) {
-      return res.status(400).json({ message: 'targetUserId is required' });
-    }
-    
-    // Prevent sending request to self
-    if (targetUserId.toString() === requesterId.toString()) {
+    // Prevent sending request to yourself
+    if (myId.toString() === targetUserId) {
       return res.status(400).json({ message: "You can't send a friend request to yourself" });
     }
     
-    // Find both users
-    const targetUser = await User.findById(targetUserId);
-    if (!targetUser) {
-      return res.status(404).json({ message: 'Target user not found' });
+    const recipient = await User.findById(targetUserId);
+    if (!recipient) {
+      return res.status(404).json({ message: "Recipient not found" });
     }
     
-    const requester = await User.findById(requesterId);
-    if (!requester) {
-      return res.status(404).json({ message: 'Requester not found' });
+    // Check if users are already friends
+    if (recipient.friends.includes(myId)) {
+      return res.status(400).json({ message: "You are already friends with this user" });
     }
     
-    // Check if already friends
-    if (targetUser.friends.includes(requesterId)) {
-      return res.status(400).json({ message: 'Already friends with this user' });
+    // Check if a request already exists
+    const existingRequest = await FriendRequest.findOne({
+      $or: [
+        { sender: myId, recipient: targetUserId },
+        { sender: targetUserId, recipient: myId },
+      ],
+    });
+    
+    if (existingRequest) {
+      return res.status(400).json({ 
+        message: "A friend request already exists between you and this user",
+        request: existingRequest
+      });
     }
     
-    // Check if request already sent
-    if (targetUser.friendRequests.includes(requesterId)) {
-      return res.status(400).json({ message: 'Friend request already sent' });
-    }
+    // Create the friend request
+    const friendRequest = await FriendRequest.create({
+      sender: myId,
+      recipient: targetUserId,
+    });
     
-    // Add requester to target's friend requests
-    targetUser.friendRequests.push(requesterId);
-    await targetUser.save();
-    
-    // Also update the requester's sent requests if your model supports it
+    // Add to sent requests array in User model for backward compatibility
+    const requester = await User.findById(myId);
     if (!requester.sentFriendRequests) {
       requester.sentFriendRequests = [];
     }
     requester.sentFriendRequests.push(targetUserId);
     await requester.save();
     
-    // If you're using Stream for notifications, add this code:
+    // For backward compatibility - update recipient's friendRequests array
+    if (!recipient.friendRequests) {
+      recipient.friendRequests = [];
+    }
+    recipient.friendRequests.push(myId);
+    await recipient.save();
+    
+    // Optional: Send notification via Stream if configured
     try {
-      // Replace with your actual Stream integration code
-      const streamClient = StreamChat.getInstance(process.env.STREAM_API_KEY, process.env.STREAM_API_SECRET);
-      
-      const channel = streamClient.channel('messaging', `notifications:${targetUserId}`, {
-        members: [targetUserId.toString()],
-        created_by_id: requesterId.toString(),
-      });
-      
-      await channel.create();
-      
-      // Send friend request event
-      await channel.sendEvent({
-        type: 'friend_request',
-        user: { _id: targetUserId.toString() },
-        sender: {
-          _id: requesterId.toString(),
-          name: requester.username,
-          image: requester.avatar || '',
-        }
-      });
-      
-      console.log(`Friend request notification sent from ${requesterId} to ${targetUserId}`);
-    } catch (streamError) {
-      console.error('Error sending Stream notification:', streamError);
+      if (typeof upsertStreamUser === 'function' && StreamChat) {
+        const streamClient = StreamChat.getInstance(
+          process.env.STREAM_API_KEY,
+          process.env.STREAM_API_SECRET
+        );
+        
+        const channel = streamClient.channel('messaging', `notifications:${targetUserId}`, {
+          members: [targetUserId.toString()],
+          created_by_id: myId.toString(),
+        });
+        
+        await channel.create();
+        
+        await channel.sendEvent({
+          type: 'friend_request',
+          user: { _id: targetUserId.toString() },
+          sender: {
+            _id: myId.toString(),
+            name: requester.username,
+            image: requester.avatar || '',
+          }
+        });
+      }
+    } catch (notificationError) {
+      console.error('Error sending notification:', notificationError);
       // Continue even if notification fails
     }
     
-    // Log the successful request
-    console.log(`Friend request sent from ${requesterId} to ${targetUserId}`);
-    
-    res.status(200).json({ 
-      message: 'Friend request sent successfully',
-      sentFriendRequests: requester.sentFriendRequests
-    });
+    res.status(201).json(friendRequest);
   } catch (error) {
-    console.error('Error sending friend request:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("Error in sendFriendRequest controller:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
@@ -547,11 +572,50 @@ export const sendFriendRequest = async (req, res) => {
 export const acceptFriendRequest = async (req, res) => {
   try {
     const { requesterId } = req.body;
-    const userId = req.user._id;
+    const myId = req.user._id;
     
-    if (!requesterId) {
-      return res.status(400).json({ message: 'Requester ID is required' });
+    // Find the friend request
+    const friendRequest = await FriendRequest.findOne({
+      sender: requesterId,
+      recipient: myId,
+      status: 'pending'
+    });
+    
+    if (!friendRequest) {
+      // Fall back to the old method for backward compatibility
+      return acceptLegacyFriendRequest(req, res);
     }
+    
+    // Update request status
+    friendRequest.status = 'accepted';
+    await friendRequest.save();
+    
+    // Add each user to the other's friends array
+    await User.findByIdAndUpdate(friendRequest.sender, {
+      $addToSet: { friends: friendRequest.recipient },
+      $pull: { sentFriendRequests: friendRequest.recipient }
+    });
+    
+    await User.findByIdAndUpdate(friendRequest.recipient, {
+      $addToSet: { friends: friendRequest.sender },
+      $pull: { friendRequests: friendRequest.sender }
+    });
+    
+    res.status(200).json({ 
+      message: "Friend request accepted",
+      request: friendRequest
+    });
+  } catch (error) {
+    console.error("Error in acceptFriendRequest controller:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// Legacy method for backward compatibility
+const acceptLegacyFriendRequest = async (req, res) => {
+  try {
+    const { requesterId } = req.body;
+    const userId = req.user._id;
     
     // Find the current user
     const user = await User.findById(userId);
@@ -559,7 +623,7 @@ export const acceptFriendRequest = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     
-    // Check if request exists
+    // Check if request exists in the legacy format
     if (!user.friendRequests.includes(requesterId)) {
       return res.status(400).json({ message: 'No pending friend request from this user' });
     }
@@ -595,65 +659,75 @@ export const acceptFriendRequest = async (req, res) => {
     await user.save();
     await requester.save();
     
+    // Create a FriendRequest record for historical purposes
+    try {
+      await FriendRequest.create({
+        sender: requesterId,
+        recipient: userId,
+        status: 'accepted'
+      });
+    } catch (e) {
+      // Ignore errors here - this is just for record keeping
+      console.log('Could not create historical friend request record:', e.message);
+    }
+    
     res.status(200).json({ 
       message: 'Friend request accepted', 
       friends: user.friends,
       friendRequests: user.friendRequests
     });
   } catch (error) {
-    console.error('Error accepting friend request:', error);
+    console.error('Error accepting legacy friend request:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
-
-// Get pending friend requests for the current user
-export const getPendingFriendRequests = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id)
-      .populate('friendRequests', 'username avatar bio');
-    
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-    
-    res.status(200).json(user.friendRequests);
-  } catch (error) {
-    console.error('Error fetching friend requests:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-};
-
-// Get user's notifications
-export const getUserNotifications = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    
-    // Generate a Stream token for frontend
-    const token = generateStreamToken(userId);
-    
-    res.status(200).json({ 
-      token,
-      userId: userId.toString()
-    });
-  } catch (error) {
-    console.error('Error generating Stream token:', error);
-    res.status(500).json({ message: error.message || 'Failed to get notifications' });
-  }
-};
-
-/**
- * Controller function for rejecting a friend request
- * This removes the requester's ID from the user's friendRequests array
- */
+// Reject a friend request
 export const rejectFriendRequest = async (req, res) => {
   try {
     const { requesterId } = req.body;
-    const userId = req.user._id;
+    const myId = req.user._id;
     
-    if (!requesterId) {
-      return res.status(400).json({ message: 'Requester ID is required' });
+    // Find the request
+    const friendRequest = await FriendRequest.findOne({
+      sender: requesterId,
+      recipient: myId,
+      status: 'pending'
+    });
+    
+    if (!friendRequest) {
+      // Fall back to legacy method
+      return rejectLegacyFriendRequest(req, res);
     }
+    
+    // Update status
+    friendRequest.status = 'rejected';
+    await friendRequest.save();
+    
+    // Update user models for compatibility
+    await User.findByIdAndUpdate(myId, {
+      $pull: { friendRequests: requesterId }
+    });
+    
+    await User.findByIdAndUpdate(requesterId, {
+      $pull: { sentFriendRequests: myId }
+    });
+    
+    res.status(200).json({ 
+      message: "Friend request rejected",
+      request: friendRequest
+    });
+  } catch (error) {
+    console.error("Error in rejectFriendRequest controller:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// Legacy method for backward compatibility
+const rejectLegacyFriendRequest = async (req, res) => {
+  try {
+    const { requesterId } = req.body;
+    const userId = req.user._id;
     
     // Find the current user
     const user = await User.findById(userId);
@@ -683,6 +757,18 @@ export const rejectFriendRequest = async (req, res) => {
       await requester.save();
     }
     
+    // Create a record in the FriendRequest model for consistency
+    try {
+      await FriendRequest.create({
+        sender: requesterId,
+        recipient: userId,
+        status: 'rejected'
+      });
+    } catch (e) {
+      // Ignore errors here - this is just for record keeping
+      console.log('Could not create historical friend request record:', e.message);
+    }
+    
     res.status(200).json({ 
       message: 'Friend request rejected', 
       friendRequests: user.friendRequests
@@ -693,9 +779,142 @@ export const rejectFriendRequest = async (req, res) => {
   }
 };
 
+// Get friend requests for the current user
+export const getFriendRequests = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    
+    // Get incoming pending requests
+    const incomingReqs = await FriendRequest.find({
+      recipient: myId,
+      status: 'pending'
+    }).populate('sender', 'username avatar bio interests strengths needsHelpWith');
+    
+    // Get outgoing accepted requests
+    const acceptedReqs = await FriendRequest.find({
+      sender: myId,
+      status: 'accepted'
+    }).populate('recipient', 'username avatar bio');
+    
+    // For backward compatibility, also check the user model
+    const user = await User.findById(myId)
+      .populate('friendRequests', 'username avatar bio interests strengths needsHelpWith');
+    
+    // Merge the legacy and new methods
+    let combinedIncomingReqs = [...incomingReqs];
+    
+    // Add any requests in the user model that aren't in the FriendRequest model
+    if (user && user.friendRequests && user.friendRequests.length > 0) {
+      const existingRequestIds = incomingReqs.map(req => req.sender._id.toString());
+      const legacyRequests = user.friendRequests.filter(
+        req => !existingRequestIds.includes(req._id.toString())
+      );
+      
+      // Format legacy requests to match FriendRequest model format
+      const formattedLegacyRequests = legacyRequests.map(sender => ({
+        sender,
+        recipient: { _id: myId },
+        status: 'pending',
+        _id: 'legacy-' + sender._id, // Add prefix to distinguish legacy requests
+        createdAt: new Date()
+      }));
+      
+      combinedIncomingReqs = [...combinedIncomingReqs, ...formattedLegacyRequests];
+    }
+    
+    res.status(200).json({ 
+      incomingReqs: combinedIncomingReqs, 
+      acceptedReqs 
+    });
+  } catch (error) {
+    console.error("Error in getFriendRequests controller:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// Get outgoing friend requests
+export const getOutgoingFriendReqs = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    
+    // Get outgoing pending requests
+    const outgoingRequests = await FriendRequest.find({
+      sender: myId,
+      status: 'pending'
+    }).populate('recipient', 'username avatar bio interests strengths needsHelpWith');
+    
+    // For backward compatibility, also check the user model
+    const user = await User.findById(myId);
+    
+    if (user && user.sentFriendRequests && user.sentFriendRequests.length > 0) {
+      const existingRequestIds = outgoingRequests.map(req => req.recipient._id.toString());
+      
+      // Find any sent requests in the user model that aren't in FriendRequest
+      const legacyRecipientIds = user.sentFriendRequests.filter(
+        id => !existingRequestIds.includes(id.toString())
+      );
+      
+      if (legacyRecipientIds.length > 0) {
+        const legacyRecipients = await User.find({
+          _id: { $in: legacyRecipientIds }
+        }).select('username avatar bio interests strengths needsHelpWith');
+        
+        // Format legacy requests to match FriendRequest model
+        const formattedLegacyRequests = legacyRecipients.map(recipient => ({
+          sender: { _id: myId },
+          recipient,
+          status: 'pending',
+          _id: 'legacy-' + recipient._id, // Add prefix to distinguish legacy requests
+          createdAt: new Date()
+        }));
+        
+        // Combine with the FriendRequest model requests
+        const combinedOutgoingReqs = [...outgoingRequests, ...formattedLegacyRequests];
+        return res.status(200).json(combinedOutgoingReqs);
+      }
+    }
+    
+    res.status(200).json(outgoingRequests);
+  } catch (error) {
+    console.error("Error in getOutgoingFriendReqs controller:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// Get incoming friend requests for backward compatibility 
+export const getPendingFriendRequests = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    
+    // Use the new method under the hood
+    const { incomingReqs } = await getFriendRequests({ user: { _id: myId } }, { json: function(data) { return data; } });
+    
+    res.status(200).json(incomingReqs);
+  } catch (error) {
+    console.error('Error fetching friend requests:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * Controller function to get a user by their ID
+ * Retrieves user details while excluding sensitive information like password
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
 export const getUserById = async (req, res) => {
   try {
     const userId = req.params.id;
+    
+    if (!userId || userId === 'undefined') {
+      return res.status(400).json({ message: 'Valid User ID is required' });
+    }
+
+    // Validate that userId is a valid ObjectId format
+    if (!/^[0-9a-fA-F]{24}$/.test(userId)) {
+      return res.status(400).json({ message: 'Invalid User ID format' });
+    }
     
     // Fetch user excluding password
     const user = await User.findById(userId).select('-password');
@@ -704,12 +923,41 @@ export const getUserById = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     
-    res.status(200).json(user);
+    // Check if the requested user and current user are friends
+    let isFriend = false;
+    if (req.user && req.user._id) {
+      isFriend = user.friends.some(
+        friendId => friendId.toString() === req.user._id.toString()
+      );
+    }
+    
+    // Format the response with additional information
+    const userResponse = {
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      bio: user.bio,
+      avatar: user.avatar,
+      interests: user.interests || [],
+      strengths: user.strengths || [],
+      needsHelpWith: user.needsHelpWith || [],
+      rating: user.rating,
+      github: user.github,
+      linkedin: user.linkedin,
+      leetcode: user.leetcode,
+      portfolio: user.portfolio,
+      isOnline: user.isOnline,
+      isOnboarded: user.isOnboarded,
+      isFriend: isFriend,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+    
+    res.status(200).json(userResponse);
   } catch (error) {
     console.error('Error fetching user by ID:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
-
 
 export { addFriend, upload };

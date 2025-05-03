@@ -1,3 +1,4 @@
+// src/pages/Profile/components/PeerItem.jsx
 import { useEffect, useState } from 'react';
 import {
   Avatar,
@@ -6,17 +7,23 @@ import {
   ListItemAvatar,
   ListItemText,
   Divider,
+  CircularProgress
 } from '@mui/material';
-import useUserStore from '../../../../contexts/userStore'; // Import your store
+import useUserStore from '../../../../contexts/userStore';
+import { useFriends } from '../../../../hooks/useFriends';
 
 export default function PeerItem({ peer, onSnackbar }) {
-  // Get user and connection functions from the store - just like PeerCard
-  const { user, addFriend, removeFriend, fetchUser } = useUserStore();
+  // Get user data from the store
+  const { user } = useUserStore();
   
-  const [connecting, setConnecting] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
+  // Use our custom hook for real-time friend management
+  const { 
+    sendRequest, 
+    removeFriend, 
+    isSendingRequest, 
+    isRemovingFriend 
+  } = useFriends();
   
-  // Use the same isConnected logic as in PeerCard
   const [isConnected, setIsConnected] = useState(false);
   
   useEffect(() => {
@@ -45,36 +52,15 @@ export default function PeerItem({ peer, onSnackbar }) {
     e.stopPropagation();
     const peerId = peer.id || peer._id;
     
-    if (connecting || !peerId || !user?._id) return;
+    if (!peerId || isSendingRequest) return;
     
-    setConnecting(true);
     try {
-      // Use the direct API call just like in PeerCard
-      const response = await fetch('http://localhost:8000/api/users/add-friend', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: user._id,
-          friendId: peerId
-        })
-      });
-      
-      if (response.ok) {
-        // After successful connection, update the global user state
-        await fetchUser(); // This will refresh the user data including friends list
-        setIsConnected(true);
-        onSnackbar(`Connected with ${peer.username}!`, 'success');
-      } else {
-        throw new Error('Failed to connect');
-      }
+      // Use the mutation function from our custom hook
+      await sendRequest(peerId);
+      onSnackbar(`Friend request sent to ${peer.username}!`, 'success');
     } catch (error) {
       console.error('Connection error:', error);
-      onSnackbar('Failed to connect', 'error');
-    } finally {
-      setConnecting(false);
+      onSnackbar('Failed to send friend request', 'error');
     }
   };
   
@@ -82,41 +68,24 @@ export default function PeerItem({ peer, onSnackbar }) {
     e.stopPropagation();
     const peerId = peer.id || peer._id;
     
-    if (disconnecting || !peerId || !user?._id) return;
+    if (!peerId || isRemovingFriend) return;
     
-    setDisconnecting(true);
     try {
-      const response = await fetch('http://localhost:8000/api/users/remove-friend', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: user._id,
-          friendId: peerId
-        })
-      });
-      
-      if (response.ok) {
-        // After successful disconnection, update the global user state
-        await fetchUser(); // This will refresh the user data including friends list
-        setIsConnected(false);
-        onSnackbar(`Disconnected from ${peer.username}`, 'info');
-      } else {
-        throw new Error('Failed to disconnect');
-      }
+      // Use the mutation function from our custom hook
+      await removeFriend(peerId);
+      onSnackbar(`Disconnected from ${peer.username}`, 'info');
     } catch (error) {
       console.error('Disconnection error:', error);
       onSnackbar('Failed to disconnect', 'error');
-    } finally {
-      setDisconnecting(false);
     }
   };
   
   const handleToggle = (e) => {
     return isConnected ? handleDisconnect(e) : handleConnect(e);
   };
+  
+  // Determine if this component is in a loading state
+  const isLoading = isSendingRequest || isRemovingFriend;
   
   return (
     <>
@@ -133,11 +102,15 @@ export default function PeerItem({ peer, onSnackbar }) {
         <Button
           variant={isConnected ? 'outlined' : 'contained'}
           size="small"
-          disabled={connecting || disconnecting}
+          disabled={isLoading}
           onClick={handleToggle}
+          endIcon={
+            isLoading ?
+            <CircularProgress size={16} color="inherit" /> :
+            null
+          }
         >
           {isConnected ? 'Connected' : 'Connect'}
-          {(connecting || disconnecting) && '...'}
         </Button>
       </ListItem>
       <Divider component="li" />

@@ -1,3 +1,4 @@
+// routes/userRoutes.js
 import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
 import {
@@ -12,11 +13,14 @@ import {
   sendFriendRequest,
   acceptFriendRequest,
   rejectFriendRequest,
+  getFriendRequests,
+  getOutgoingFriendReqs,
   getPendingFriendRequests,
-  getUserNotifications,
+  
   removeFriend,
   getUserById,
-  addFriend
+  addFriend,
+  removeFriendHandler
 } from '../controllers/userController.js';
 
 const router = express.Router();
@@ -43,7 +47,6 @@ router.put('/add-friend', protect, async (req, res) => {
   }
   
   try {
-    // Assuming addFriend is a function that handles adding friends
     await addFriend(userId, friendId);
     res.status(200).json({ message: 'Friend added successfully' });
   } catch (error) {
@@ -51,30 +54,22 @@ router.put('/add-friend', protect, async (req, res) => {
   }
 });
 
-router.put('/remove-friend', protect, async (req, res) => {
-  try {
-    const { userId, friendId } = req.body;
-    
-    if (!userId || !friendId) {
-      return res.status(400).json({ message: 'User ID and Friend ID are required' });
-    }
-    
-    await removeFriend(userId, friendId);
-    res.status(200).json({ message: 'Friend removed successfully' });
-  } catch (error) {
-    console.error('Error removing friend:', error);
-    res.status(500).json({ message: 'Error removing friend', error: error.message });
-  }
-});
+router.put('/remove-friend', protect, removeFriendHandler);
 
-// Friend request routes
+// Friend request routes - Updated with new implementations
 router.post('/friend-request', protect, sendFriendRequest);
 router.post('/friend-request/accept', protect, acceptFriendRequest);
 router.post('/friend-request/reject', protect, rejectFriendRequest);
-router.get('/friend-requests', protect, getPendingFriendRequests);
+
+// New friend request endpoints
+router.get('/friend-requests', protect, getFriendRequests);
+router.get('/outgoing-friend-requests', protect, getOutgoingFriendReqs);
+router.get('/pending-friend-requests', protect, getPendingFriendRequests); // For backward compatibility
+
+// Get user by ID
 router.get('/:id', protect, getUserById);
 
 // Notification routes
-router.get('/notifications', protect, getUserNotifications);
+// router.get('/notifications', protect, getUserNotifications);
 
 export default router;

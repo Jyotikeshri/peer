@@ -1,14 +1,14 @@
 // src/contexts/authStore.js
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import useUserStore from './userStore';
 
-// Define the auth store with persistence
+// Define the auth store with improved persistence
 const useAuthStore = create(
   persist(
     (set, get) => ({
       isAuthenticated: false,
-      token: null, // <-- Added token field
+      token: null,
       isLoading: false,
       error: null,
 
@@ -35,17 +35,29 @@ const useAuthStore = create(
             throw new Error(data.message || 'Login failed');
           }
 
-          // Store user and token
+          // Store user in userStore
           if (data.user) {
             useUserStore.getState().setUser(data.user);
           }
 
+          // Explicitly handle token storage
+          const token = data.token;
+          
+          // For debugging - remove in production
+          console.log("Login successful, received token:", token ? "Token received" : "No token in response");
+
+          // Set token in the store
           set({ 
             isAuthenticated: true,
-            token: data.token, // <-- Save token here
+            token: token,
             isLoading: false,
             error: null
           });
+
+          // Backup in localStorage (as fallback)
+          if (token) {
+            localStorage.setItem('backup_token', token);
+          }
 
           return true;
         } catch (error) {
@@ -75,17 +87,28 @@ const useAuthStore = create(
             throw new Error(data.message || 'Registration failed');
           }
 
-          // Store user and token
+          // Store user in userStore
           if (data.user) {
             useUserStore.getState().setUser(data.user);
           }
 
+          // Explicitly handle token storage
+          const token = data.token;
+          
+          // For debugging - remove in production
+          console.log("Registration successful, received token:", token ? "Token received" : "No token in response");
+
           set({
             isAuthenticated: true,
-            token: data.token, // <-- Save token here too
+            token: token,
             isLoading: false,
             error: null
           });
+
+          // Backup in localStorage (as fallback)
+          if (token) {
+            localStorage.setItem('backup_token', token);
+          }
 
           return true;
         } catch (error) {
@@ -107,9 +130,12 @@ const useAuthStore = create(
 
           useUserStore.getState().clearUser();
 
+          // Clear token backup
+          localStorage.removeItem('backup_token');
+
           set({
             isAuthenticated: false,
-            token: null, // <-- Clear token on logout
+            token: null,
             isLoading: false,
             error: null
           });
@@ -122,23 +148,40 @@ const useAuthStore = create(
         }
       },
 
-      // Check authentication status
+      // Check authentication status and refresh token if needed
       checkAuth: async () => {
         try {
           set({ isLoading: true });
 
           const response = await fetch('http://localhost:8000/api/users/profile', {
             credentials: 'include',
+            headers: {
+              // Try to send token if we have it in the store
+              ...(get().token ? { 'Authorization': `Bearer ${get().token}` } : {})
+            }
           });
 
           if (!response.ok) {
             set({ isAuthenticated: false, isLoading: false, token: null });
             useUserStore.getState().clearUser();
+            localStorage.removeItem('backup_token');
             return false;
           }
 
           const userData = await response.json();
           useUserStore.getState().setUser(userData);
+
+          // If the API response includes a token, update it
+          if (userData.token) {
+            set({ token: userData.token });
+            localStorage.setItem('backup_token', userData.token);
+          } else {
+            // If no token in response but we have a backup, restore it
+            const backupToken = localStorage.getItem('backup_token');
+            if (backupToken && !get().token) {
+              set({ token: backupToken });
+            }
+          }
 
           set({ isAuthenticated: true, isLoading: false });
           return true;
@@ -146,18 +189,43 @@ const useAuthStore = create(
           console.error('Authentication check error:', error);
           set({ isAuthenticated: false, isLoading: false, token: null });
           useUserStore.getState().clearUser();
+          localStorage.removeItem('backup_token');
           return false;
         }
       },
 
-      // Set token manually (optional if needed)
-      setToken: (token) => set({ token })
+      // Get token with fallback to localStorage if store value is null
+      getToken: () => {
+        const storeToken = get().token;
+        if (storeToken) return storeToken;
+        
+        // Try to get from backup in localStorage
+        const backupToken = localStorage.getItem('backup_token');
+        if (backupToken) {
+          // Restore the token to the store
+          set({ token: backupToken });
+          return backupToken;
+        }
+        
+        return null;
+      },
+
+      // Set token manually
+      setToken: (token) => {
+        set({ token });
+        if (token) {
+          localStorage.setItem('backup_token', token);
+        } else {
+          localStorage.removeItem('backup_token');
+        }
+      }
     }),
     {
-      name: 'auth-storage', // unique name for localStorage
+      name: 'auth-storage',
+      storage: createJSONStorage(() => localStorage), // Explicitly using localStorage
       partialize: (state) => ({
         isAuthenticated: state.isAuthenticated,
-        token: state.token, // <-- Persist token too
+        token: state.token,
       }),
     }
   )

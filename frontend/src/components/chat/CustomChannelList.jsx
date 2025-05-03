@@ -295,11 +295,11 @@ const CustomChannelList = ({ client, filters, sort }) => {
   }
 
   // Log all channels for debugging
-  console.log('All channels with data:', channels.map(c => ({
-    id: c.id,
-    data: c.data,
-    isGroup: isGroupChat(c)
-  })));
+  // console.log('All channels with data:', channels.map(c => ({
+  //   id: c.id,
+  //   data: c.data,
+  //   isGroup: isGroupChat(c)
+  // })));
 
   return (
     <List sx={{ px: 1 }}>

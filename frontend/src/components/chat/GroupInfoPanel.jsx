@@ -1,5 +1,5 @@
 // src/components/chat/GroupInfoPanel.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Drawer from '@mui/material/Drawer';
@@ -17,9 +17,21 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import CircularProgress from '@mui/material/CircularProgress';
+import Divider from '@mui/material/Divider';
+import Chip from '@mui/material/Chip';
+import InputAdornment from '@mui/material/InputAdornment';
+import Paper from '@mui/material/Paper';
+import Tooltip from '@mui/material/Tooltip';
+
+// Icons
 import CloseIcon from '@mui/icons-material/Close';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
+import SearchIcon from '@mui/icons-material/Search';
+import GroupIcon from '@mui/icons-material/Group';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import ClearIcon from '@mui/icons-material/Clear';
+
 import useUserStore from '../../contexts/userStore';
 import toast from 'react-hot-toast';
 
@@ -33,30 +45,39 @@ export default function GroupInfoPanel({
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [availableFriends, setAvailableFriends] = useState([]);
-  const { user, friends } = useUserStore();
+  const { user, friends, fetchFriends } = useUserStore();
   
-  // Determine which friends are not already in the group
+  // Fetch friends on mount
   useEffect(() => {
-    if (!friends || !groupData) return;
+    if (open && (!friends || friends.length === 0)) {
+      fetchFriends();
+    }
+  }, [open, friends, fetchFriends]);
+  
+  // Memoize available friends to avoid recalculation
+  const availableFriends = useMemo(() => {
+    if (!friends || !groupData?.members) return [];
     
     // Get all member IDs from the group
     const memberIds = groupData.members.map(member => member._id);
     
     // Filter friends who are not already members
-    const nonMemberFriends = friends.filter(friend => 
-      !memberIds.includes(friend._id)
-    );
-    
-    setAvailableFriends(nonMemberFriends);
-  }, [friends, groupData]);
+    return friends.filter(friend => !memberIds.includes(friend._id));
+  }, [friends, groupData?.members]);
   
   // Filter available friends based on search term
-  const filteredFriends = availableFriends?.filter(friend => 
-    (friend?.username || friend?.fullName || '')
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  ) || [];
+  const filteredFriends = useMemo(() => {
+    if (!searchTerm.trim()) return availableFriends;
+    
+    return availableFriends.filter(friend => 
+      (friend?.username || '')
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      (friend?.fullName || '')
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase())
+    );
+  }, [availableFriends, searchTerm]);
   
   // Handle adding a member to the group
   const handleAddMember = async (friendId) => {
@@ -136,6 +157,10 @@ export default function GroupInfoPanel({
     }
   };
   
+  const handleClearSearch = () => {
+    setSearchTerm('');
+  };
+  
   if (!groupData) {
     return null;
   }
@@ -148,56 +173,84 @@ export default function GroupInfoPanel({
         onClose={onClose}
         sx={{
           '& .MuiDrawer-paper': { 
-            width: { xs: '100%', sm: 320 },
-            p: 2
+            width: { xs: '100%', sm: 360 },
+            p: 0
           },
         }}
       >
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6">Group Info</Typography>
-          <IconButton onClick={onClose} size="small">
+        <Box sx={{ 
+          p: 2, 
+          borderRadius: 0, 
+          bgcolor: 'primary.dark', // Using theme's deep navy blue
+          color: 'white',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <Typography variant="h6" fontWeight="600">Group Details</Typography>
+          <IconButton onClick={onClose} size="small" sx={{ color: 'white' }}>
             <CloseIcon />
           </IconButton>
         </Box>
         
-        <Box sx={{ mb: 3, textAlign: 'center' }}>
+        <Box sx={{ 
+          p: 0, 
+          textAlign: 'center', 
+          bgcolor: 'primary.dark',  // Match header color
+          color: 'white', 
+          pb: 4 
+        }}>
           <Avatar
             src={groupData.avatar}
             sx={{
-              width: 80,
-              height: 80,
+              width: 120,
+              height: 120,
               mx: 'auto',
-              mb: 1,
-              bgcolor: 'primary.main'
+              mb: 2,
+              bgcolor: 'primary.main', // Royal Blue from theme
+              border: '4px solid',
+              borderColor: 'rgba(255, 255, 255, 0.2)',
+              fontSize: '3rem',
+              mt: 2
             }}
           >
             {groupData.name.charAt(0).toUpperCase()}
           </Avatar>
-          <Typography variant="h6">{groupData.name}</Typography>
+          <Typography variant="h5" fontWeight="600" color="white">{groupData.name}</Typography>
           {groupData.description && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            <Typography variant="body1" color="rgba(255, 255, 255, 0.7)" sx={{ mt: 1 }}>
               {groupData.description}
             </Typography>
           )}
         </Box>
         
-        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="subtitle1">
-            Members ({groupData.members.length})
-          </Typography>
-          
-          {isAdmin && (
-            <Button
-              startIcon={<PersonAddIcon />}
-              size="small"
-              onClick={() => setAddMemberOpen(true)}
-            >
-              Add
-            </Button>
-          )}
+        <Divider />
+        
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: -2 }}>
+          <Button
+            variant="contained"
+            startIcon={<PersonAddIcon />}
+            size="medium"
+            onClick={() => setAddMemberOpen(true)}
+            sx={{ 
+              bgcolor: 'primary.light', // Bright Blue from theme
+              color: 'white',
+              '&:hover': {
+                bgcolor: 'primary.main'
+              }
+            }}
+          >
+            Add Member
+          </Button>
         </Box>
         
-        <List>
+        <Box sx={{ px: 2, pt: 3, pb: 1 }}>
+          <Typography variant="subtitle1" fontWeight="600" color="white">
+            {groupData.members.length} {groupData.members.length === 1 ? 'Member' : 'Members'}
+          </Typography>
+        </Box>
+        
+        <List sx={{ px: 2, pt: 0, mb: 2 }}>
           {groupData.members.map((member) => {
             const isCurrentUserAdmin = user._id === groupData.admin._id;
             const isMemberAdmin = member._id === groupData.admin._id;
@@ -207,17 +260,42 @@ export default function GroupInfoPanel({
             const canRemove = isCurrentUserAdmin && !isMemberAdmin;
             
             return (
-              <ListItem key={member._id}>
-                <ListItemAvatar>
-                  <Avatar src={member.avatar}>
+              <ListItem 
+                key={member._id}
+                sx={{ 
+                  borderRadius: 2,
+                  mb: 0.5,
+                  py: 1,
+                  '&:hover': {
+                    bgcolor: 'rgba(0, 0, 0, 0.04)',
+                  }
+                }}
+              >
+                <ListItemAvatar color='white'>
+                  <Avatar 
+                    src={member.avatar}
+                    sx={{ 
+                      width: 40,
+                      height: 40
+                    }}
+                  >
                     {(member.username || 'U').charAt(0).toUpperCase()}
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText
-                  primary={member.username || 'Unknown User'}
-                  secondary={isMemberAdmin ? 'Admin' : null}
+                
+                  primary={<Typography component="div" variant="body2" color="white">
+                    {member.username || 'Unknown User'}
+                  </Typography>}
+                  secondary={
+                    isMemberAdmin ? (
+                      <Typography component="span" variant="body2" color="primary.light">
+                        Admin
+                      </Typography>
+                    ) : null
+                  }
                   primaryTypographyProps={{
-                    fontWeight: isMemberAdmin ? 'bold' : 'normal',
+                    fontWeight: isMemberAdmin ? '600' : 'normal',
                   }}
                 />
                 {canRemove && (
@@ -228,8 +306,9 @@ export default function GroupInfoPanel({
                       size="small"
                       onClick={() => handleRemoveMember(member._id)}
                       disabled={loading}
+                      sx={{ color: 'text.secondary' }}
                     >
-                      <PersonRemoveIcon />
+                      <PersonRemoveIcon fontSize="small" />
                     </IconButton>
                   </ListItemSecondaryAction>
                 )}
@@ -242,65 +321,119 @@ export default function GroupInfoPanel({
       {/* Add Member Dialog */}
       <Dialog
         open={addMemberOpen}
-        onClose={() => setAddMemberOpen(false)}
-        maxWidth="xs"
+        onClose={() => !loading && setAddMemberOpen(false)}
+        maxWidth="sm"
         fullWidth
+        PaperProps={{
+          elevation: 3,
+          sx: { borderRadius: 2 }
+        }}
       >
-        <DialogTitle>Add Members</DialogTitle>
-        <DialogContent dividers>
+        <DialogTitle sx={{ 
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.default' 
+        }}>
+          <Typography variant="h6" fontWeight="600">Add Members</Typography>
+        </DialogTitle>
+        
+        <DialogContent sx={{ pt: 3, pb: 1 }}>
           <TextField
             fullWidth
-            label="Search Friends"
+            placeholder="Search friends"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            margin="normal"
+            variant="outlined"
             size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon color="action" />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm ? (
+                <InputAdornment position="end">
+                  <IconButton
+                    onClick={handleClearSearch}
+                    edge="end"
+                    size="small"
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null
+            }}
+            sx={{ mb: 2 }}
           />
           
           {loading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
-              <CircularProgress size={24} />
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
+              <CircularProgress size={28} color="primary" />
             </Box>
           )}
           
-          <List sx={{ mt: 2 }}>
-            {filteredFriends.length > 0 ? (
-              filteredFriends.map((friend) => (
-                <ListItem
-                  key={friend._id}
-                  button
-                  onClick={() => handleAddMember(friend._id)}
-                  disabled={loading}
-                >
-                  <ListItemAvatar>
-                    <Avatar 
-                      src={friend.avatar} 
-                      alt={friend.username || friend.fullName}
-                    >
-                      {(friend.username || friend.fullName || 'U').charAt(0).toUpperCase()}
-                    </Avatar>
-                  </ListItemAvatar>
-                  <ListItemText primary={friend.username || friend.fullName} />
+          <Box sx={{ maxHeight: 350, overflow: 'auto' }}>
+            <List disablePadding>
+              {filteredFriends.length > 0 ? (
+                filteredFriends.map((friend) => (
+                  <ListItem
+                    key={friend._id}
+                    button
+                    onClick={() => handleAddMember(friend._id)}
+                    disabled={loading}
+                    sx={{ 
+                      py: 1.5,
+                      borderRadius: 2,
+                      mb: 0.5,
+                      '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' },
+                    }}
+                  >
+                    <ListItemAvatar>
+                      <Avatar 
+                        src={friend.avatar} 
+                        alt={friend.username || friend.fullName}
+                      >
+                        {(friend.username || friend.fullName || 'U').charAt(0).toUpperCase()}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText 
+                      primary={friend.username || friend.fullName} 
+                      primaryTypographyProps={{ fontWeight: '500' }}
+                    />
+                    <PersonAddIcon color="primary" fontSize="small" sx={{ ml: 1 }} />
+                  </ListItem>
+                ))
+              ) : (
+                <ListItem sx={{ py: 4 }}>
+                  <ListItemText 
+                    primary={
+                      searchTerm 
+                        ? "No matching friends found" 
+                        : availableFriends.length === 0
+                          ? "All your friends are already in this group"
+                          : "No friends available to add"
+                    } 
+                    primaryTypographyProps={{ 
+                      align: 'center', 
+                      color: 'text.secondary',
+                      variant: 'body2'
+                    }}
+                  />
                 </ListItem>
-              ))
-            ) : (
-              <ListItem>
-                <ListItemText 
-                  primary={
-                    searchTerm 
-                      ? "No matching friends found" 
-                      : availableFriends.length === 0
-                        ? "All your friends are already in this group"
-                        : "No friends available to add"
-                  } 
-                  primaryTypographyProps={{ align: 'center', color: 'text.secondary' }}
-                />
-              </ListItem>
-            )}
-          </List>
+              )}
+            </List>
+          </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAddMemberOpen(false)}>Close</Button>
+        
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button 
+            onClick={() => setAddMemberOpen(false)} 
+            variant="text"
+            disabled={loading}
+            sx={{ color: 'text.secondary' }}
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
     </>

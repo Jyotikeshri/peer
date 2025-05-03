@@ -21,6 +21,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import useAuthStore from '../../../contexts/authStore';
 import useUserStore from '../../../contexts/userStore';
 import NotificationComponent from '../../../components/notifications/NotificationComponent';
+import { NotificationAddRounded } from '@mui/icons-material';
 
 
 const Header = ({ onToggleSidebar }) => {
@@ -41,6 +42,11 @@ const Header = ({ onToggleSidebar }) => {
     navigate(`/profile/${user?._id}`);
     handleClose();
   };
+
+  const handleNoti = () =>{
+    navigate(`/notifications`);
+    handleClose();
+  }
 
   const handleSettings = () => {
     navigate('/settings');
@@ -72,7 +78,9 @@ const Header = ({ onToggleSidebar }) => {
         </Typography>
         
         {/* Add notification component here */}
-        <NotificationComponent />
+        <MenuItem onClick={handleNoti}>
+        <NotificationAddRounded />
+        </MenuItem>
         
         {/* User menu */}
         <Box sx={{ ml: 2 }}>

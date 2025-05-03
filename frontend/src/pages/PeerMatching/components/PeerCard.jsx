@@ -1,3 +1,4 @@
+// src/pages/Profile/components/PeerCard.jsx
 import { useState, useEffect } from 'react';
 import { 
   Box, 
@@ -13,6 +14,7 @@ import {
 import { styled } from '@mui/material/styles';
 import useUserStore from '../../../contexts/userStore';
 import PeerProfileModal from './PeerProfileModal';
+import { useFriends } from '../../../hooks/useFriends';
 
 const SkillTag = styled(Box)(({ theme, type }) => ({
   display: 'inline-flex',
@@ -33,8 +35,6 @@ const SkillTag = styled(Box)(({ theme, type }) => ({
 
 const PeerCard = ({ peer }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
   const [snackbar, setSnackbar] = useState({
@@ -42,6 +42,7 @@ const PeerCard = ({ peer }) => {
     message: '',
     severity: 'success'
   });
+  
   const handleCloseSnackbar = () => {
     setSnackbar({
       ...snackbar,
@@ -49,8 +50,16 @@ const PeerCard = ({ peer }) => {
     });
   };
   
-  // Get user and connection functions from the store
-  const { user, addFriend, removeFriend, fetchUser } = useUserStore();
+  // Get user data from the store
+  const { user } = useUserStore();
+  
+  // Use our custom hook for real-time friend management
+  const { 
+    sendRequest, 
+    removeFriend, 
+    isSendingRequest, 
+    isRemovingFriend 
+  } = useFriends();
   
   // Check if this peer is already connected to the current user
   const [isConnected, setIsConnected] = useState(false);
@@ -58,13 +67,11 @@ const PeerCard = ({ peer }) => {
   // Check connection status when user or peer data changes
   useEffect(() => {
     if (user && user.friends && peer) {
-      // Use peer.id instead of peer._id to match what your peer object actually has
-      const peerId = peer.id || peer._id; // Try both to be safe
+      const peerId = peer.id || peer._id;
       
       if (peerId) {
         const connected = user.friends.some(
           friendId => {
-            // Check different possible formats of friendId
             if (typeof friendId === 'string') {
               return friendId === peerId;
             } else if (friendId && typeof friendId === 'object') {
@@ -79,93 +86,48 @@ const PeerCard = ({ peer }) => {
     }
   }, [user, peer]);
   
-  // Handle connecting with a peer - UPDATED to match disconnect behavior
+  // Handle connecting with a peer
   const handleConnect = async (e) => {
-    // Stop event propagation to prevent the modal from opening when clicking the connect button
     if (e) e.stopPropagation();
     
-    if (!peer || !peer.id || connecting) return;
+    const peerId = peer.id || peer._id;
+    if (!peerId || isSendingRequest) return;
     
     try {
-      setConnecting(true); // This will show the spinner
+      // Use the mutation function from our custom hook
+      await sendRequest(peerId);
       
-      // Make direct API call instead of using the store function
-      const response = await fetch('http://localhost:8000/api/users/add-friend', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: user._id,
-          friendId: peer.id
-        })
+      setSnackbar({
+        open: true,
+        message: `Friend request sent to ${peer.name || peer.username}!`,
+        severity: 'success'
       });
-      
-      if (response.ok) {
-        // Update local state
-        setIsConnected(true);
-        
-        // Fetch updated user data to refresh the global state
-        await fetchUser();
-        
-        setSnackbar({
-          open: true,
-          message: `Connected with ${peer.name || peer.username}!`,
-          severity: 'success'
-        });
-      } else {
-        throw new Error('Failed to connect');
-      }
     } catch (error) {
       console.error('Error connecting with peer:', error);
       setSnackbar({
         open: true,
-        message: 'Failed to connect. Please try again.',
+        message: 'Failed to send friend request. Please try again.',
         severity: 'error'
       });
-    } finally {
-      setConnecting(false); // Hide the spinner
     }
   };
   
   // Handle disconnecting from a peer
   const handleDisconnect = async (e) => {
-    // Stop event propagation to prevent the modal from opening when clicking the disconnect button
     if (e) e.stopPropagation();
     
-    if (!peer || !peer.id || disconnecting) return;
+    const peerId = peer.id || peer._id;
+    if (!peerId || isRemovingFriend) return;
     
     try {
-      setDisconnecting(true); // Show the spinner
+      // Use the mutation function from our custom hook
+      await removeFriend(peerId);
       
-      const response = await fetch('http://localhost:8000/api/users/remove-friend', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: user._id,
-          friendId: peer.id
-        })
+      setSnackbar({
+        open: true,
+        message: `Disconnected from ${peer.name || peer.username}`,
+        severity: 'info'
       });
-      
-      if (response.ok) {
-        // Update local state
-        setIsConnected(false);
-        
-        // Fetch updated user data to refresh the global state
-        await fetchUser();
-        
-        setSnackbar({
-          open: true,
-          message: `Disconnected from ${peer.name || peer.username}`,
-          severity: 'info'
-        });
-      }else {
-        throw new Error('Failed to disconnect');
-      }
     } catch (error) {
       console.error('Error disconnecting from peer:', error);
       setSnackbar({
@@ -173,8 +135,6 @@ const PeerCard = ({ peer }) => {
         message: 'Failed to disconnect. Please try again.',
         severity: 'error'
       });
-    } finally {
-      setDisconnecting(false); // Hide the spinner
     }
   };
   
@@ -186,6 +146,9 @@ const PeerCard = ({ peer }) => {
       handleConnect(e);
     }
   };
+  
+  // Determine if this component is in a loading state
+  const isLoading = isSendingRequest || isRemovingFriend;
   
   // Format the score as a percentage for display
   const matchPercentage = peer.score ? `${Math.round(peer.score * 100)}%` : '';
@@ -285,7 +248,7 @@ const PeerCard = ({ peer }) => {
               variant={isConnected ? "outlined" : "contained"}
               color="primary"
               onClick={handleConnectToggle}
-              disabled={connecting || disconnecting}
+              disabled={isLoading}
               sx={{
                 borderRadius: 6,
                 px: 2,
@@ -305,7 +268,7 @@ const PeerCard = ({ peer }) => {
                 })
               }}
             >
-              {connecting || disconnecting ? (
+              {isLoading ? (
                 <CircularProgress size={16} sx={{ color: isConnected ? '#07092F' : 'inherit' }} />
               ) : (
                 isConnected ? 'Connected' : 'Connect'
@@ -314,6 +277,7 @@ const PeerCard = ({ peer }) => {
           </Box>
         )}
 
+        {/* Card Content - Unchanged */}
         <Box sx={{ p: 2.5, pt: 3 }}>
           {/* Profile info */}
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, position: 'relative' }}>
@@ -402,6 +366,8 @@ const PeerCard = ({ peer }) => {
           )}
         </Box>
       </Box>
+
+      
       
       {/* Profile Modal */}
       <PeerProfileModal
@@ -409,8 +375,8 @@ const PeerCard = ({ peer }) => {
         onClose={() => setModalOpen(false)}
         peer={peer}
         isConnected={isConnected}
-        connecting={connecting}
-        disconnecting={disconnecting}
+        connecting={isSendingRequest}
+        disconnecting={isRemovingFriend}
         handleConnect={handleConnect}
         handleDisconnect={handleDisconnect}
         setSnackbar={setSnackbar}
