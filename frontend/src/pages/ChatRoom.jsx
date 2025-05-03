@@ -89,8 +89,8 @@ const CustomMessage = (props) => {
 
 
 // Get group details from API
-const getGroupDetails = async (groupId) => {
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/groups/${groupId}`, {
+const getGroupDetails = async (mongroupId) => {
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/groups/${mongroupId}`, {
     credentials: 'include'
   });
   
@@ -282,6 +282,8 @@ export default function ChatRoom() {
   const [error, setError] = useState(null);
   const [isGroup, setIsGroup] = useState(false);
   const [groupId, setGroupId] = useState(null);
+  const [mongroupId, setMonGroupId] = useState(null);
+
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
 
   const [incomingCall, setIncomingCall] = useState(false);
@@ -377,7 +379,7 @@ export default function ChatRoom() {
       setIsGroup(true);
       
       // Extract group ID from the database - we'll need to fetch it
-      fetch(`${import.meta.env.VITE_API_BASE_URL}/groups`, {
+      fetch(`${import.meta.env.VITE_API_BASE_URL}/groups/user`, {
         credentials: 'include'
       })
       .then(res => {
@@ -387,8 +389,10 @@ export default function ChatRoom() {
       .then(groups => {
         // Find the group with matching channelId
         const group = groups.find(g => g.channelId === channelId);
+        console.log(group);
         if (group) {
-          setGroupId(group._id);
+          setGroupId(group.channelId);
+          setMonGroupId(group._id);
         }
       })
       .catch(err => {
@@ -407,7 +411,7 @@ export default function ChatRoom() {
     refetch: refetchGroupData
   } = useQuery({
     queryKey: ['group', groupId],
-    queryFn: () => getGroupDetails(groupId),
+    queryFn: () => getGroupDetails(mongroupId),
     enabled: !!groupId && !!user?._id, // Only run for group chats
     retry: 1,
   });
@@ -510,6 +514,7 @@ export default function ChatRoom() {
     };
   }, [tokenData, user, channelId]);
   
+  console.log(groupId , user);
   // Handle leaving a group
   const handleLeaveGroup = async () => {
     try {
@@ -521,7 +526,7 @@ export default function ChatRoom() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          groupId: groupId,
+          groupId: mongroupId,
           userId: user._id
         }),
       });
@@ -553,11 +558,10 @@ export default function ChatRoom() {
       };
       
       // Send a call request notification
+      const callUrl = `${window.location.origin}/call/${channelId}`;
+
       channel.sendMessage({
-        text: `CALL_REQUEST:${JSON.stringify(callData)}`,
-      }).catch(err => {
-        console.error('Error sending call notification:', err);
-        toast.error('Failed to initiate call');
+        text: `I've started a video call. Join me here: ${callUrl}`,
       });
       
       // Navigate to call page after a short delay
@@ -684,6 +688,8 @@ export default function ChatRoom() {
           <Thread />
         </Channel>
       </Chat>
+
+      {console.log(isGroup , groupData)}
       
       {/* Group Info Panel */}
       {isGroup && groupData && (

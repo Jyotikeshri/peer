@@ -39,7 +39,7 @@ const Header = ({ onToggleSidebar }) => {
   };
 
   const handleProfile = () => {
-    navigate(`/profile/${user?._id}`);
+    navigate(`/profile`);
     handleClose();
   };
 
@@ -74,7 +74,7 @@ const Header = ({ onToggleSidebar }) => {
         )}
         
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          DevMate
+          Peer Network
         </Typography>
         
         {/* Add notification component here */}

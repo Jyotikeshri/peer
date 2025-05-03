@@ -49,7 +49,7 @@ const getFriends = async () => {
 };
 
 const getGroups = async () => {
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/groups`, {
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/groups/user`, {
     credentials: 'include'
   });
   

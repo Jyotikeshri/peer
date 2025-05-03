@@ -21,7 +21,8 @@ import {
   BarChart as ProgressIcon,
   Message as MessageIcon,
   Logout as LogoutIcon,
-  Menu as MenuIcon
+  Menu as MenuIcon,
+  MeetingRoom
 } from '@mui/icons-material';
 import useAuthStore from '../../../contexts/authStore';
 
@@ -55,6 +56,11 @@ const menuItems = [
     text: 'Messages', 
     icon: <MessageIcon />, 
     path: '/messages' 
+  },
+  { 
+    text: 'Schedule Meeting', 
+    icon: <MeetingRoom />, 
+    path: 'https://metube-fredio-call-xv4s.vercel.app/' 
   }
 ];
 

@@ -29,6 +29,8 @@ import ErrorBoundary from './components/errors/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
 import NotificationsPage from './pages/NotificationsPage';
 import UserReviewsPage from './pages/Profile/components/UserReviewsPage';
+import GroupsDiscoveryPage from './pages/Groups/GroupDiscoveryPage';
+import CreateGroupForm from './pages/Groups/CreateGroupForm';
 
 // Create a single QueryClient instance
 const queryClient = new QueryClient();
@@ -130,7 +132,11 @@ function AppContent() {
         { path: 'chat/:channelId',     element: <ChatRoom /> },
         { path: 'call/:id',            element: <CallPage /> },
         { path: 'notifications',            element: <NotificationsPage /> },
-        { path:"/reviews/:userId" ,  element:<UserReviewsPage />}
+        { path:"/reviews/:userId" ,  element:<UserReviewsPage />},
+        { path:"groups" ,  element:<GroupsDiscoveryPage />},
+        { path:"groups/create" ,  element:<CreateGroupForm />}
+
+
 
       ],
     },
