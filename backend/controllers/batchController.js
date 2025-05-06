@@ -18,12 +18,15 @@ async function assignBadgesBatch() {
         // Check if the badge already exists
         const existingBadge = await Badge.findOne({ user: user._id, badgeType: 'Top Reviewer' });
         if (!existingBadge) {
-          await Badge.create({
+          const badge = await Badge.create({
             user: user._id,
             badgeType: 'Top Reviewer',
             description: 'Awarded for having more than 15 reviews.',
           });
-          badgesAwarded.push('Top Reviewer');
+          badgesAwarded.push(badge._id);
+          // Update user's badges field
+          user.badges.push(badge._id);
+          await user.save();
           console.log(`Badge "Top Reviewer" awarded to ${user.username}`);
         } else {
           console.log(`User ${user.username} already has the "Top Reviewer" badge.`);
@@ -49,12 +52,15 @@ async function assignBadgesBatch() {
         // Check if the badge already exists
         const existingBadge = await Badge.findOne({ user: user._id, badgeType: 'High Rated' });
         if (!existingBadge) {
-          await Badge.create({
+          const badge = await Badge.create({
             user: user._id,
             badgeType: 'High Rated',
             description: 'Awarded for having an average rating higher than 4.5.',
           });
-          badgesAwarded.push('High Rated');
+          badgesAwarded.push(badge._id);
+          // Update user's badges field
+          user.badges.push(badge._id);
+          await user.save();
           console.log(`Badge "High Rated" awarded to ${user.username}`);
         } else {
           console.log(`User ${user.username} already has the "High Rated" badge.`);
@@ -66,12 +72,15 @@ async function assignBadgesBatch() {
         // Check if the badge already exists
         const existingBadge = await Badge.findOne({ user: user._id, badgeType: 'Social Butterfly' });
         if (!existingBadge) {
-          await Badge.create({
+          const badge = await Badge.create({
             user: user._id,
             badgeType: 'Social Butterfly',
             description: 'Awarded for having more than 15 friends.',
           });
-          badgesAwarded.push('Social Butterfly');
+          badgesAwarded.push(badge._id);
+          // Update user's badges field
+          user.badges.push(badge._id);
+          await user.save();
           console.log(`Badge "Social Butterfly" awarded to ${user.username}`);
         } else {
           console.log(`User ${user.username} already has the "Social Butterfly" badge.`);
@@ -91,12 +100,15 @@ async function assignBadgesBatch() {
       //   // Check if the badge already exists
       //   const existingBadge = await Badge.findOne({ user: user._id, badgeType: 'Study Master' });
       //   if (!existingBadge) {
-      //     await Badge.create({
+      //     const badge = await Badge.create({
       //       user: user._id,
       //       badgeType: 'Study Master',
       //       description: 'Awarded for spending more than 1000 minutes in study groups.',
       //     });
-      //     badgesAwarded.push('Study Master');
+      //     badgesAwarded.push(badge._id);
+      //     // Update user's badges field
+      //     user.badges.push(badge._id);
+      //     await user.save();
       //     console.log(`Badge "Study Master" awarded to ${user.username}`);
       //   } else {
       //     console.log(`User ${user.username} already has the "Study Master" badge.`);

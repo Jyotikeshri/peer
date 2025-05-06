@@ -47,11 +47,11 @@ const menuItems = [
     icon: <MatchingIcon />, 
     path: '/matching' 
   },
-  { 
-    text: 'Progress', 
-    icon: <ProgressIcon />, 
-    path: '/progress' 
-  },
+  // { 
+  //   text: 'Progress', 
+  //   icon: <ProgressIcon />, 
+  //   path: '/progress' 
+  // },
   { 
     text: 'Messages', 
     icon: <MessageIcon />, 

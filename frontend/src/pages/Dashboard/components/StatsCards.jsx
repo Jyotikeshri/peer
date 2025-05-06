@@ -6,8 +6,10 @@ import {
   EmojiEvents as BadgeIcon,
   CheckCircle as CheckIcon,
   Link as LinkIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
+  People
 } from '@mui/icons-material';
+import useUserStore from '../../../contexts/userStore';
 
 const StatCard = ({ title, value, icon, color, bgColor }) => {
   return (
@@ -57,6 +59,9 @@ const StatCard = ({ title, value, icon, color, bgColor }) => {
 };
 
 const StatsCards = ({ data }) => {
+  const {user} = useUserStore();
+  
+
   let { studyStreak, activeGroups, earnedBadges } = data;
   studyStreak = studyStreak || 0;
   activeGroups = activeGroups || 0;
@@ -66,9 +71,9 @@ const StatsCards = ({ data }) => {
     <Grid container spacing={5}> {/* Increased spacing between cards for better layout */}
       <Grid item xs={12} sm={6} md={4}> {/* Responsive design for better layout */}
         <StatCard
-          title="Study Streak"
-          value={`${studyStreak} days`}
-          icon={<FireIcon />} // Updated icon
+          title="Connections"
+          value={`${user?.friends?.length} Friends`}
+          icon={<People />} // Updated icon
           color="#4CAF50"
           bgColor="#e8f5e9"
         />
@@ -85,7 +90,7 @@ const StatsCards = ({ data }) => {
       <Grid item xs={12} sm={6} md={4}>
         <StatCard
           title="Earned Badges"
-          value={`${earnedBadges} total`}
+          value={`${user?.badges?.length} total`}
           icon={<BadgeIcon />} // Updated icon
           color="#F44336"
           bgColor="#ffebee"
